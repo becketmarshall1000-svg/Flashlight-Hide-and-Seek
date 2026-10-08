@@ -1,0 +1,9 @@
+# Render reads this file to set up the game server automatically.
+services:
+  - type: web
+    name: flashlight-hide-and-seek
+    runtime: node
+    plan: free
+    buildCommand: echo "Nothing to build"
+    startCommand: node server.js
+    healthCheckPath: /health

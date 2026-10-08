@@ -1,0 +1,1711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{margin:0}</style>
+<title>Flashlight Hide and Seek Game</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap">
+</head>
+<body>
+<style>
+/* Layout: one 16:9 game stage centered on black; HUD and menus float over the canvas. Deliberately single dark look. */
+:root{
+  --bg:#000; --ink:#ece4d0; --muted:#8d8573; --dim:#5e584b; --beam:#e8c46a; --you:#7aa6ff;
+  --win:#4fd182; --danger:#e8693a; --panel:rgba(10,9,7,.9); --line:#2c271e;
+  --hud:"Chakra Petch",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--hud)}
+[hidden]{display:none!important}
+.wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding-inline:16px;padding-block:16px;box-sizing:border-box}
+.stage{position:relative;width:min(100%, calc((100vh - 48px) * 16 / 9));aspect-ratio:16/9;max-width:100%;container-type:inline-size;background:#000;border:1px solid #17140f;border-radius:6px;overflow:hidden}
+canvas{display:block;width:100%;height:100%;cursor:crosshair;outline:none}
+.hud{position:absolute;inset:0;pointer-events:none;font-size:clamp(9px,1.1cqw,15px)}
+.lbl{font-size:.8em;letter-spacing:.2em;color:var(--muted);text-transform:uppercase}
+.tl{position:absolute;left:2.4%;top:3.5%;display:flex;flex-direction:column;gap:.3em;max-width:33%}
+.obj{text-wrap:balance}
+.obj{font-size:1.55em;font-weight:700;color:var(--ink)}
+.tc{position:absolute;left:50%;top:3.5%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:.5em}
+.meter{width:18cqw;height:.6em;border-radius:99px;background:#1c1912;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:#e8a33a;transition:background .2s}
+.pips{display:flex;gap:.5em}
+.pips span{width:1em;height:1em;border-radius:50%;border:2px solid var(--you)}
+.pips span.on{background:var(--beam);border-color:var(--beam)}
+.pips span.alive{background:var(--you)}
+.pips span.mate{border-color:#5fd38a}
+.pips span.mate.alive{background:#5fd38a}
+.tr{position:absolute;right:2.4%;top:3%;text-align:right}
+.time{font-size:2.4em;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.time.low{color:var(--danger)}
+.bl{position:absolute;left:2.4%;bottom:4%;display:flex;flex-direction:column;gap:.5em}
+.bars{display:flex;align-items:flex-end;gap:.3em;height:1.9em}
+.bars span{width:.6em;background:#2a2f3a}
+.bars span.on{background:var(--you)}
+.br{position:absolute;right:2.4%;bottom:4%;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.4em 1.3em;color:var(--muted);max-width:60%}
+.br b{color:var(--ink);font-weight:700}
+.prompt{position:absolute;left:50%;bottom:14%;transform:translateX(-50%);font-size:1.5em;font-weight:700;color:#0b0b0b;background:var(--you);padding:.35em .9em;border-radius:6px;letter-spacing:.06em}
+.toast{position:absolute;left:50%;top:15%;transform:translateX(-50%);font-size:1.3em;font-weight:700;color:var(--beam);letter-spacing:.08em}
+
+.overlay{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;background:rgba(0,0,0,.55);overflow:auto;font-size:clamp(11px,1.15cqw,16px);padding-inline:16px;padding-block:16px;box-sizing:border-box}
+.panel{margin-block:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:2em 2.2em;max-width:44em;width:100%;display:flex;flex-direction:column;gap:1.3em}
+.panel h1{margin:0;font-size:2.6em;line-height:1.05;letter-spacing:-.01em;text-wrap:balance}
+.panel h1 em{font-style:normal;color:var(--beam)}
+.panel p{margin:0;color:var(--muted);line-height:1.5;max-width:60ch}
+.modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1em}
+.mode{font:inherit;text-align:left;cursor:pointer;background:#13110d;border:1px solid var(--line);border-radius:8px;padding:1.1em 1.2em;color:var(--ink);display:flex;flex-direction:column;gap:.45em;transition:border-color .15s,background .15s}
+.mode:hover{border-color:var(--beam);background:#1a1710}
+.mode strong{font-size:1.5em}
+.mode span{color:var(--muted);line-height:1.45}
+.mode .tag{font-size:.78em;letter-spacing:.18em;text-transform:uppercase}
+.mode.hide .tag{color:var(--you)} .mode.seek .tag{color:var(--beam)}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:.6em}
+.chip{font:inherit;font-size:.9em;letter-spacing:.08em;cursor:pointer;padding:.45em 1em;border-radius:99px;border:1px solid var(--line);background:transparent;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--ink);color:#0b0b0b;border-color:var(--ink)}
+.btn{font:inherit;font-weight:700;cursor:pointer;padding:.7em 1.4em;border-radius:7px;border:1px solid var(--beam);background:var(--beam);color:#141109}
+.btn.winbtn{background:var(--win);border-color:var(--win);color:#06200f}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn:hover{filter:brightness(1.08)}
+button:focus-visible{outline:2px solid var(--you);outline-offset:2px}
+.note{font-size:.85em;color:var(--dim)}
+.settings{display:flex;flex-direction:column;gap:.7em;padding:.9em 1em;border:1px solid var(--line);border-radius:8px}
+.set{display:grid;grid-template-columns:7.5em minmax(0,1fr) 10em;align-items:center;gap:.8em}
+.set input{width:100%;accent-color:var(--beam);cursor:pointer}
+.set .val{display:flex;align-items:center;gap:.5em;font-variant-numeric:tabular-nums}
+.set .val b{color:var(--ink);min-width:3.5em}
+.rec{font-size:.75em;letter-spacing:.12em;text-transform:uppercase;color:var(--beam)}
+#recBtn:disabled{opacity:.45;cursor:default}
+@container (max-width:560px){.set{grid-template-columns:minmax(0,1fr)}}
+.sneak{align-self:flex-start;font-size:.85em;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#0b0b0b;background:var(--you);padding:.2em .6em;border-radius:4px}
+.rounds{display:flex;gap:.5em;flex-wrap:wrap}
+.btn.online{background:transparent;color:var(--you);border-color:var(--you)}
+.btn:disabled{opacity:.45;cursor:default;filter:none}
+.roombar{display:flex;flex-wrap:wrap;align-items:center;gap:.8em;padding:.8em 1em;border:1px solid var(--you);border-radius:8px;color:var(--ink)}
+.roombar b{color:var(--you);letter-spacing:.15em}
+.field{display:flex;flex-direction:column;gap:.35em}
+.field.grow{flex:1 1 10em;min-width:0}
+.field input{font:inherit;font-size:1.1em;padding:.55em .7em;border-radius:7px;border:1px solid var(--line);background:#13110d;color:var(--ink);min-width:0}
+.field input:focus-visible{outline:2px solid var(--you);outline-offset:1px}
+.err{margin:0;color:var(--danger)}
+.lobbyhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:.4em 1em}
+.code{font-size:2.6em;letter-spacing:.2em;color:var(--you)}
+.plist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.45em}
+.plist li{display:flex;align-items:center;gap:.7em;padding:.55em .8em;border:1px solid var(--line);border-radius:8px;background:#13110d}
+.plist .pname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plist .tagx{font-size:.75em;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.role{font:inherit;font-size:.85em;padding:.35em .8em;border-radius:99px;border:1px solid var(--you);background:transparent;color:var(--you);cursor:pointer}
+.role.seeker{border-color:var(--beam);color:#141109;background:var(--beam)}
+.role:disabled{cursor:default}
+.summary{margin:0;color:var(--ink)}
+#lobbyJoin,#lobbyRoom{display:flex;flex-direction:column;gap:1em}
+#lobbyJoin[hidden],#lobbyRoom[hidden]{display:none}
+.rounds span{font-size:.85em;letter-spacing:.1em;text-transform:uppercase;padding:.35em .8em;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+.rounds span.w{background:var(--win);border-color:var(--win);color:#06200f}
+.rounds span.l{background:var(--danger);border-color:var(--danger);color:#160a05}
+@container (max-width:560px){.modes{grid-template-columns:minmax(0,1fr)}.panel{padding:1.2em}}
+@media (prefers-reduced-motion: reduce){.mode,.meter i{transition:none}}
+</style>
+
+<div class="wrap">
+<div class="stage" id="stage">
+  <canvas id="cv" width="1280" height="720" tabindex="0" aria-label="Game view"></canvas>
+
+  <div class="hud" id="hud" hidden>
+    <div class="tl"><div class="lbl" id="hMode">You are hiding</div><div class="obj" id="hObj">Get inside the seeker's circle and tag it</div></div>
+    <div class="tc">
+      <div class="lbl" id="hMeterLbl">Suspicion</div>
+      <div class="meter" id="hMeterWrap"><i id="hMeter"></i></div>
+      <div class="lbl" id="hPipsLbl" hidden>Caught</div>
+      <div class="pips" id="hPips" hidden></div>
+    </div>
+    <div class="tr"><div class="lbl">Time left</div><div class="time" id="hTime">2:00</div></div>
+    <div class="bl" id="hNoiseBox"><div class="sneak" id="hSneak" hidden>Sneaking</div><div class="lbl">Noise</div><div class="bars" id="hNoise"><span style="height:20%"></span><span style="height:40%"></span><span style="height:60%"></span><span style="height:80%"></span><span style="height:100%"></span></div></div>
+    <div class="br" id="hKeys"></div>
+    <div class="prompt" id="hPrompt" hidden>Press E to tag</div>
+    <div class="toast" id="hToast" hidden></div>
+  </div>
+
+  <div class="overlay" id="menu">
+    <div class="panel">
+      <h1>Flashlight <em>Hide and Seek</em></h1>
+      <p>The room is pitch black. The seeker only sees what its flashlight beam touches. Pick a game type below: tag the seeker by getting close, or just survive until the timer runs out. Matches are best of three rounds.</p>
+      <div class="roombar" id="roomBar" hidden>
+        <span>Online game <b id="roomBarCode">----</b>. Change the settings below, then go back to the lobby to start.</span>
+        <button class="btn" id="backLobby" type="button">Back to lobby</button>
+      </div>
+      <div class="modes" id="modes">
+        <button class="mode hide" id="pickHide" type="button">
+          <span class="tag">Play as</span><strong>Hider</strong>
+          <span id="hideDesc">A bot hunts you with a flashlight. Stay out of the beam, keep quiet, and get inside its circle to tag it. Extra hiders are bots on your team.</span>
+        </button>
+        <button class="mode seek" id="pickSeek" type="button">
+          <span class="tag">Play as</span><strong>Seeker</strong>
+          <span id="seekDesc">You hold the flashlight. Catch every hiding bot before one sneaks up behind you.</span>
+        </button>
+      </div>
+      <div class="row" id="onlineRow" hidden><button class="btn online" id="onlineBtn" type="button">Play online with friends</button><span class="note">Create a game and share the code, or join with a code.</span></div>
+      <div class="row"><span class="lbl">Game type</span>
+        <button class="chip" data-type="tag" aria-pressed="true" type="button">Tag the seeker</button>
+        <button class="chip" data-type="survive" aria-pressed="false" type="button">Survive the timer</button>
+        <button class="chip" data-type="infect" aria-pressed="false" type="button">Infection</button>
+      </div>
+      <p class="note" id="typeNote">Hiders win by getting inside the circle around the seeker and tagging it. The seeker wins by catching every hider.</p>
+      <div class="row"><span class="lbl">Difficulty</span>
+        <button class="chip" data-d="easy" aria-pressed="false" type="button">Easy</button>
+        <button class="chip" data-d="normal" aria-pressed="true" type="button">Normal</button>
+        <button class="chip" data-d="hard" aria-pressed="false" type="button">Hard</button>
+      </div>
+      <div class="row"><span class="lbl">Hiders</span>
+        <button class="chip hc" data-n="1" aria-pressed="false" type="button">1</button>
+        <button class="chip hc" data-n="2" aria-pressed="false" type="button">2</button>
+        <button class="chip hc" data-n="3" aria-pressed="true" type="button">3</button>
+        <button class="chip hc" data-n="4" aria-pressed="false" type="button">4</button>
+        <button class="chip hc" data-n="5" aria-pressed="false" type="button">5</button>
+        <button class="chip hc" data-n="6" aria-pressed="false" type="button">6</button>
+      </div>
+      <div class="settings">
+        <label class="set" for="timeIn"><span class="lbl">Round time</span>
+          <input id="timeIn" type="range" min="30" max="120" step="10" value="90">
+          <span class="val"><b id="timeVal">1:30</b> <span class="rec" id="timeRec">Recommended</span></span>
+        </label>
+        <label class="set" for="sizeIn"><span class="lbl">Map size</span>
+          <input id="sizeIn" type="range" min="1" max="6" step="1" value="3">
+          <span class="val"><b id="sizeVal">Medium</b> <span class="rec" id="sizeRec">Recommended</span></span>
+        </label>
+        <div class="row"><button class="chip" id="recBtn" type="button">Use recommended</button><span class="note">Picking a hider count sets both automatically. The time is the same for hiders and the seeker in both game types.</span></div>
+      </div>
+      <div class="row"><span class="lbl">Steering</span>
+        <button class="chip" data-steer="keys" aria-pressed="true" type="button">WASD</button>
+        <button class="chip" data-steer="forward" aria-pressed="false" type="button">Forward to mouse</button>
+        <button class="chip" data-steer="follow" aria-pressed="false" type="button">Follow mouse</button>
+      </div>
+      <p class="note" id="steerNote">WASD or arrow keys move. The mouse only aims the flashlight. Press M in game to switch.</p>
+      <div class="row"><span class="lbl">Sound</span>
+        <button class="chip" id="soundBtn" aria-pressed="true" type="button">On</button>
+        <span class="note">Footsteps, heartbeat, alarms and other effects. Press N in game to switch.</span>
+      </div>
+      <div class="row"><span class="lbl">Music</span>
+        <button class="chip" id="musicBtn" aria-pressed="true" type="button">On</button>
+        <span class="note">The low background hum. Press B in game to switch.</span>
+      </div>
+      <p class="note">More hiders means a bigger room, and the whole room always fits on screen. Every round gets a new layout. Needs a keyboard. Seeker mode also uses the mouse to aim.</p>
+    </div>
+  </div>
+
+  <div class="overlay" id="lobby" hidden>
+    <div class="panel" style="max-width:34em">
+      <div id="lobbyJoin">
+        <h1>Play <em>online</em></h1>
+        <label class="field" for="nameIn"><span class="lbl">Your name</span><input id="nameIn" maxlength="16" autocomplete="nickname" placeholder="Your name"></label>
+        <div class="row"><button class="btn" id="createBtn" type="button">Create a game</button></div>
+        <div class="row"><label class="field grow" for="codeIn"><span class="lbl">Or join with a code</span><input id="codeIn" maxlength="4" autocomplete="off" placeholder="ABCD" style="text-transform:uppercase;letter-spacing:.3em"></label><button class="btn ghost" id="joinBtn" type="button">Join</button></div>
+        <p class="err" id="lobbyErr" hidden></p>
+        <div class="row"><button class="btn ghost" id="lobbyBack" type="button">Back</button></div>
+      </div>
+      <div id="lobbyRoom" hidden>
+        <div class="lobbyhead"><span class="lbl">Game code</span><b class="code" id="roomCode">----</b><span class="note">Share this code with your friends.</span></div>
+        <div class="lbl">Players</div>
+        <ul class="plist" id="plist"></ul>
+        <p class="note" id="roleNote"></p>
+        <p class="summary" id="lobbySummary"></p>
+        <p class="err" id="lobbyMsg" hidden></p>
+        <div class="row" id="hostRow"><button class="btn" id="startBtn" type="button">Start game</button><button class="btn ghost" id="settingsBtn" type="button">Change settings</button></div>
+        <p class="note" id="waitNote" hidden>Waiting for the host to start the game…</p>
+        <div class="row"><button class="btn ghost" id="leaveBtn" type="button">Leave game</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="paused" hidden>
+    <div class="panel" style="max-width:26em">
+      <h1>Paused</h1>
+      <div class="row"><button class="btn" id="resume" type="button">Resume</button><button class="btn ghost" id="quit1" type="button">Main menu</button></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="over" hidden>
+    <div class="panel" style="max-width:30em">
+      <h1 id="oTitle">Tagged it!</h1>
+      <div class="rounds" id="oRounds"></div>
+      <p id="oText"></p>
+      <div class="row"><button class="btn" id="again" type="button">Next round</button><button class="btn ghost" id="quit2" type="button">Main menu</button></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(()=>{
+const CATCH_T=1.1, VW=1280, VH=720, RANGE=400, HALF=0.36, N=20, BM=4, WALL=14;
+// room size per hider count: 4 hiders = the original full-screen room
+const SIZES={1:[960,560],2:[1040,600],3:[1120,640],4:[1280,720],5:[1400,800],6:[1520,840]};
+let W=1280,H=720,COLS=0,ROWS=0,poly=[],shapes=[],reach=new Uint8Array(0),floorTiles=[],solid=new Uint8Array(0),BW=0,BH=0;
+const rand=(a,b)=>a+Math.random()*(b-a);
+const randi=(a,b)=>Math.floor(rand(a,b+1));
+const pick=a=>a[(Math.random()*a.length)|0];
+
+// ---------- geometry ----------
+function inPoly(x,y,p){let ins=false;for(let i=0,j=p.length-1;i<p.length;j=i++){const xi=p[i][0],yi=p[i][1],xj=p[j][0],yj=p[j][1];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)ins=!ins;}return ins;}
+function segDist(px,py,x1,y1,x2,y2){const dx=x2-x1,dy=y2-y1,l=dx*dx+dy*dy;let t=l?((px-x1)*dx+(py-y1)*dy)/l:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-x1-dx*t,py-y1-dy*t);}
+function shapeDist(s,x,y){
+  if(s.t==='c')return Math.hypot(x-s.x,y-s.y)-s.r;
+  if(s.t==='w')return segDist(x,y,s.x1,s.y1,s.x2,s.y2)-s.th/2;
+  const c=Math.cos(-s.a),sn=Math.sin(-s.a),lx=(x-s.x)*c-(y-s.y)*sn,ly=(x-s.x)*sn+(y-s.y)*c;
+  const qx=Math.abs(lx)-s.w/2,qy=Math.abs(ly)-s.h/2;
+  return Math.hypot(Math.max(qx,0),Math.max(qy,0))+Math.min(Math.max(qx,qy),0);
+}
+function edgeDist(x,y){let m=1e9;for(let i=0,j=poly.length-1;i<poly.length;j=i++)m=Math.min(m,segDist(x,y,poly[j][0],poly[j][1],poly[i][0],poly[i][1]));return m;}
+function solidAt(x,y,pad){
+  if(!inPoly(x,y,poly)||edgeDist(x,y)<WALL/2+pad)return true;
+  for(const s of shapes)if(shapeDist(s,x,y)<pad)return true;
+  return false;
+}
+
+// walkable grid, keeping only the largest connected area
+let open=new Uint8Array(0);
+function shapeBox(o,pad){
+  if(o.t==='c')return[o.x-o.r-pad,o.y-o.r-pad,o.x+o.r+pad,o.y+o.r+pad];
+  if(o.t==='w'){const e=o.th/2+pad;return[Math.min(o.x1,o.x2)-e,Math.min(o.y1,o.y2)-e,Math.max(o.x1,o.x2)+e,Math.max(o.y1,o.y2)+e];}
+  const e=Math.hypot(o.w,o.h)/2+pad;return[o.x-e,o.y-e,o.x+e,o.y+e];
+}
+// close every cell of a grid that a shape (plus padding) covers
+function stamp(arr,cols,rows,cell,o,pad){
+  const[x0,y0,x1,y1]=shapeBox(o,pad);
+  const c0=Math.max(0,Math.floor(x0/cell)),c1=Math.min(cols-1,Math.floor(x1/cell)),r0=Math.max(0,Math.floor(y0/cell)),r1=Math.min(rows-1,Math.floor(y1/cell));
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)if(shapeDist(o,c*cell+cell/2,r*cell+cell/2)<pad)arr[c+r*cols]=0;
+}
+function roomGrid(cell,pad){
+  const cols=Math.ceil(W/cell),rows=Math.ceil(H/cell),g=new Uint8Array(cols*rows);
+  // scanline fill of the room outline
+  for(let r=0;r<rows;r++){const y=r*cell+cell/2,xs=[];
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){const[xi,yi]=poly[i],[xj,yj]=poly[j];if((yi>y)!==(yj>y))xs.push(xi+(y-yi)*(xj-xi)/(yj-yi));}
+    xs.sort((a,b)=>a-b);
+    for(let k=0;k+1<xs.length;k+=2){const c0=Math.max(0,Math.ceil(xs[k]/cell-.5)),c1=Math.min(cols-1,Math.floor(xs[k+1]/cell-.5));for(let c=c0;c<=c1;c++)g[c+r*cols]=1;}}
+  // close the strip along each wall
+  const e=WALL/2+pad;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++)stamp(g,cols,rows,cell,{t:'w',x1:poly[j][0],y1:poly[j][1],x2:poly[i][0],y2:poly[i][1],th:WALL},pad);
+  return g;
+}
+function buildNav(){
+  let total=0;for(let i=0;i<open.length;i++)total+=open[i];
+  const comp=new Int32Array(COLS*ROWS).fill(-1);let best=-1,bestSize=0,id=0;
+  for(let i=0;i<open.length;i++){
+    if(!open[i]||comp[i]>=0)continue;
+    const q=[i];comp[i]=id;
+    for(let k=0;k<q.length;k++){const c=q[k]%COLS,r=(q[k]/COLS)|0;
+      for(const[dc,dr]of[[1,0],[-1,0],[0,1],[0,-1]]){const nc=c+dc,nr=r+dr;if(nc<0||nr<0||nc>=COLS||nr>=ROWS)continue;const n=nc+nr*COLS;if(!open[n]||comp[n]>=0)continue;comp[n]=id;q.push(n);}}
+    if(q.length>bestSize){bestSize=q.length;best=id;}
+    id++;
+  }
+  reach=new Uint8Array(COLS*ROWS);floorTiles=[];
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const i=c+r*COLS;if(comp[i]===best){reach[i]=1;floorTiles.push({x:c*N+N/2,y:r*N+N/2,c,r});}}
+  return{total,main:bestSize};
+}
+const walk=(c,r)=>c>=0&&r>=0&&c<COLS&&r<ROWS&&reach[c+r*COLS]===1;
+
+// ---------- room generator: angled walls, round pillars, open floor ----------
+function genRoom(n){
+  [W,H]=SIZES[n];
+  const m=10,X0=m,Y0=m,X1=W-m,Y1=H-m,w=X1-X0,h=Y1-Y0;
+  const kinds=['cham','cham',Math.random()<.5?'cham':'notch',Math.random()<.6?'sq':'notch'].sort(()=>Math.random()-.5);
+  const cut=()=>[w*rand(.1,.22),h*rand(.14,.3)];
+  const jog=()=>[X0+w*rand(.42,.58),w*rand(.05,.08),h*rand(.06,.1)];
+  poly=[];let a,b;
+  [a,b]=cut();
+  if(kinds[0]==='cham')poly.push([X0,Y0+b],[X0+a,Y0]);else if(kinds[0]==='notch')poly.push([X0,Y0+b],[X0+a,Y0+b],[X0+a,Y0]);else poly.push([X0,Y0]);
+  if(Math.random()<.5){const[cx,hw,d]=jog();poly.push([cx-hw-d,Y0],[cx-hw,Y0+d],[cx+hw,Y0+d],[cx+hw+d,Y0]);}
+  [a,b]=cut();
+  if(kinds[1]==='cham')poly.push([X1-a,Y0],[X1,Y0+b]);else if(kinds[1]==='notch')poly.push([X1-a,Y0],[X1-a,Y0+b],[X1,Y0+b]);else poly.push([X1,Y0]);
+  [a,b]=cut();
+  if(kinds[2]==='cham')poly.push([X1,Y1-b],[X1-a,Y1]);else if(kinds[2]==='notch')poly.push([X1,Y1-b],[X1-a,Y1-b],[X1-a,Y1]);else poly.push([X1,Y1]);
+  if(Math.random()<.4){const[cx,hw,d]=jog();poly.push([cx+hw+d,Y1],[cx+hw,Y1-d],[cx-hw,Y1-d],[cx-hw-d,Y1]);}
+  [a,b]=cut();
+  if(kinds[3]==='cham')poly.push([X0+a,Y1],[X0,Y1-b]);else if(kinds[3]==='notch')poly.push([X0+a,Y1],[X0+a,Y1-b],[X0,Y1-b]);else poly.push([X0,Y1]);
+
+  shapes=[];COLS=Math.ceil(W/N);ROWS=Math.ceil(H/N);open=roomGrid(N,17);let base=buildNav();
+  const GAP=44;
+  const clearFor=s=>{
+    if(s.t==='c')return !solidAt(s.x,s.y,s.r+GAP);
+    if(s.t==='b')return !solidAt(s.x,s.y,Math.hypot(s.w,s.h)/2+GAP*.8);
+    // walls may be closer together (hallways); a wall built off the outer wall skips its first end
+    const g=s.gap||GAP;
+    for(let k=s.attached?1:0;k<=8;k++){const t=k/8;if(solidAt(s.x1+(s.x2-s.x1)*t,s.y1+(s.y2-s.y1)*t,s.th/2+g))return false;}
+    return true;
+  };
+  const tryAdd=list=>{
+    for(const s of list)if(!clearFor(s))return false;
+    const saved=open.slice();
+    shapes.push(...list);for(const o of list)stamp(open,COLS,ROWS,N,o,17);
+    const nav=buildNav();
+    if(nav.main<nav.total*.97||nav.main<base.main*.8){shapes.length-=list.length;open=saved;buildNav();return false;}
+    base=nav;return true;
+  };
+  const place=(cnt,make)=>{let done=0;for(let k=0;k<cnt*15&&done<cnt;k++)if(tryAdd(make()))done++;};
+  const rx=()=>rand(X0+70,X1-70),ry=()=>rand(Y0+70,Y1-70);
+  // hallway walls: straight walls coming off the outer wall, sometimes with a turn,
+  // leaving doorways and corridors about two to three hiders wide
+  const edges=[];for(let i=0,j=poly.length-1;i<poly.length;j=i++){const[x1,y1]=poly[j],[x2,y2]=poly[i];
+    if((x1===x2||y1===y2)&&Math.hypot(x2-x1,y2-y1)>160)edges.push([x1,y1,x2,y2]);}
+  const starts=[];
+  place(2+Math.ceil(n*.7),()=>{
+    let px,py,x1,y1,x2,y2;
+    for(let k=0;k<20;k++){[x1,y1,x2,y2]=pick(edges);const t=rand(.2,.8);px=x1+(x2-x1)*t;py=y1+(y2-y1)*t;if(starts.every(q=>Math.hypot(q[0]-px,q[1]-py)>170))break;}
+    if(starts.some(q=>Math.hypot(q[0]-px,q[1]-py)<=170))return[{t:'c',x:-999,y:-999,r:1}];
+    let nx=-(y2-y1),ny=x2-x1;const nl=Math.hypot(nx,ny);nx/=nl;ny/=nl;
+    if(!inPoly(px+nx*20,py+ny*20,poly)){nx=-nx;ny=-ny;}
+    const span=Math.abs(nx)>.5?W:H,len=span*rand(.22,.42);
+    const sx=px+nx*(WALL/2),sy=py+ny*(WALL/2),ex=sx+nx*len,ey=sy+ny*len;
+    const out=[{t:'w',x1:sx,y1:sy,x2:ex,y2:ey,th:16,gap:34,attached:true}];
+    if(Math.random()<.5){const d=Math.random()<.5?1:-1,l2=rand(90,200);out.push({t:'w',x1:ex,y1:ey,x2:ex-ny*d*l2,y2:ey+nx*d*l2,th:16,gap:34,attached:true});}
+    starts.push([px,py]);return out;});
+  // free-standing straight hallway walls
+  place(1+Math.floor(n/2),()=>{const hz=Math.random()<.5,len=rand(140,260),x=rx(),y=ry();
+    return[{t:'w',x1:x,y1:y,x2:hz?x+len:x,y2:hz?y:y+len,th:16,gap:34}];});
+  // angled half-walls, sometimes L-shaped
+  place(1+Math.floor(n/3),()=>{
+    const x=rx(),y=ry(),ang=rand(0,Math.PI*2),len=rand(110,210),x2=x+Math.cos(ang)*len,y2=y+Math.sin(ang)*len;
+    const out=[{t:'w',x1:x,y1:y,x2,y2,th:14}];
+    if(Math.random()<.45){const a2=ang+(Math.random()<.5?1:-1)*rand(1.1,2),l2=rand(70,130);out.push({t:'w',x1:x2,y1:y2,x2:x2+Math.cos(a2)*l2,y2:y2+Math.sin(a2)*l2,th:14});}
+    return out;});
+  // round pillars of a few sizes
+  place(2+Math.ceil(n*.6),()=>[{t:'c',x:rx(),y:ry(),r:Math.random()<.25?rand(26,34):rand(12,22),kind:'pillar'}]);
+  // crates at any angle
+  place(1+Math.ceil(n/2),()=>{const sz=rand(34,54);return[{t:'b',x:rx(),y:ry(),w:sz,h:sz*rand(.8,1.2),a:rand(0,Math.PI),kind:'crate'}];});
+  // a couch or a shelf or two
+  place(1+(n>3?1:0),()=>[{t:'b',x:rx(),y:ry(),w:rand(90,120),h:42,a:rand(0,Math.PI),kind:Math.random()<.5?'couch':'shelf'}]);
+  buildNav();
+  // fine solid map for light rays and sight lines
+  BW=Math.ceil(W/BM);BH=Math.ceil(H/BM);
+  const free=roomGrid(BM,0);for(const o of shapes)stamp(free,BW,BH,BM,o,0);
+  solid=new Uint8Array(BW*BH);for(let i=0;i<solid.length;i++)solid[i]=free[i]?0:1;
+  buildScene();
+}
+const loadMap=genRoom;
+
+function solidPoint(x,y){const c=Math.floor(x/BM),r=Math.floor(y/BM);if(c<0||r<0||c>=BW||r>=BH)return true;return solid[c+r*BW]===1;}
+function collides(x,y,rad){return solidAt(x,y,rad);}
+function los(x1,y1,x2,y2){const d=Math.hypot(x2-x1,y2-y1),n=Math.ceil(d/4);for(let i=1;i<n;i++){const t=i/n;if(solidPoint(x1+(x2-x1)*t,y1+(y2-y1)*t))return false;}return true;}
+function clearWide(x1,y1,x2,y2,rd){const a=Math.atan2(y2-y1,x2-x1),nx=-Math.sin(a)*rd,ny=Math.cos(a)*rd;return los(x1,y1,x2,y2)&&los(x1+nx,y1+ny,x2+nx,y2+ny)&&los(x1-nx,y1-ny,x2-nx,y2-ny);}
+function castRay(x,y,a,range){const dx=Math.cos(a),dy=Math.sin(a);for(let d=2;d<range;d+=3){if(solidPoint(x+dx*d,y+dy*d)){const e=Math.min(d+9,range);return[x+dx*e,y+dy*e];}}return[x+dx*range,y+dy*range];}
+
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const angTo=(a,b)=>Math.atan2(b.y-a.y,b.x-a.x);
+const angDiff=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
+const rotTo=(cur,tgt,step)=>{const d=angDiff(tgt,cur);return Math.abs(d)<=step?tgt:cur+Math.sign(d)*step;};
+
+function nearestOpen(c,r){if(walk(c,r))return[c,r];for(let d=1;d<4;d++)for(let dr=-d;dr<=d;dr++)for(let dc=-d;dc<=d;dc++)if(walk(c+dc,r+dr))return[c+dc,r+dr];return[c,r];}
+function findPath(x,y,tx,ty){
+  const[sc,sr]=nearestOpen(Math.floor(x/N),Math.floor(y/N));
+  const tc=Math.floor(tx/N),tr=Math.floor(ty/N);
+  if(!walk(tc,tr))return[];
+  const start=sc+sr*COLS,goal=tc+tr*COLS,prev=new Int32Array(COLS*ROWS).fill(-1);
+  prev[start]=start;const q=[start];
+  for(let i=0;i<q.length;i++){const cur=q[i];if(cur===goal)break;const c=cur%COLS,r=(cur/COLS)|0;
+    for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(!dc&&!dr)continue;const nc=c+dc,nr=r+dr;if(!walk(nc,nr))continue;
+      if(dc&&dr&&(!walk(c+dc,r)||!walk(c,r+dr)))continue;const n=nc+nr*COLS;if(prev[n]!==-1)continue;prev[n]=cur;q.push(n);}}
+  if(prev[goal]===-1)return[];
+  const out=[];let cur=goal;while(cur!==start){out.push({x:(cur%COLS)*N+N/2,y:((cur/COLS)|0)*N+N/2});cur=prev[cur];}
+  out.reverse();if(out.length)out[out.length-1]={x:tx,y:ty};else out.push({x:tx,y:ty});
+  return out;
+}
+function moveEnt(e,dx,dy){
+  const ox=e.x,oy=e.y,len=Math.hypot(dx,dy);
+  if(!collides(e.x+dx,e.y,e.r))e.x+=dx;if(!collides(e.x,e.y+dy,e.r))e.y+=dy;
+  // blocked on both axes (a pillar or angled wall): try nearby directions to slide around it
+  if(len>0&&Math.hypot(e.x-ox,e.y-oy)<len*.25){
+    const a=Math.atan2(dy,dx);
+    for(const off of[.5,-.5,1,-1,1.4,-1.4]){const nx=Math.cos(a+off)*len,ny=Math.sin(a+off)*len;if(!collides(ox+nx,oy+ny,e.r)){e.x=ox+nx;e.y=oy+ny;break;}}
+  }
+  return Math.hypot(e.x-ox,e.y-oy);
+}
+function follow(e,speed,dt){
+  if(!e.path||!e.path.length)return true;
+  while(e.path.length>1&&clearWide(e.x,e.y,e.path[1].x,e.path[1].y,e.r+3))e.path.shift();
+  const p=e.path[0],dx=p.x-e.x,dy=p.y-e.y,d=Math.hypot(dx,dy);
+  if(d<4){e.path.shift();return !e.path.length;}
+  const step=Math.min(speed*dt,d),moved=moveEnt(e,dx/d*step,dy/d*step);
+  e.moveDir=Math.atan2(dy,dx);e.moving=moved>0.05;
+  if(moved<step*0.3){e.stuck=(e.stuck||0)+dt;if(e.stuck>0.6){e.path=[];e.stuck=0;return true;}}else e.stuck=0;
+  return false;
+}
+// a random spot from the farthest fifth of the room
+function farTile(from,avoid){
+  const list=floorTiles.filter(t=>!avoid||avoid.every(a=>dist(a,t)>80)).map(t=>[t,dist(t,from)]).sort((a,b)=>b[1]-a[1]);
+  return pick(list.slice(0,Math.max(1,Math.floor(list.length/5))))[0];
+}
+
+// ---------- static lit scene ----------
+const scene=document.createElement('canvas');
+function buildScene(){
+  scene.width=W;scene.height=H;const s=scene.getContext('2d');
+  s.fillStyle='#000';s.fillRect(0,0,W,H);
+  const path=()=>{s.beginPath();s.moveTo(poly[0][0],poly[0][1]);for(const p of poly)s.lineTo(p[0],p[1]);s.closePath();};
+  s.save();path();s.clip();
+  for(let y=0;y<H;y+=40)for(let x=0;x<W;x+=40){s.fillStyle=((x+y)/40)%2?'#3b311e':'#372e1c';s.fillRect(x,y,40,40);}
+  s.strokeStyle='rgba(0,0,0,.35)';s.lineWidth=1;
+  for(let x=0;x<=W;x+=40){s.beginPath();s.moveTo(x+.5,0);s.lineTo(x+.5,H);s.stroke();}
+  for(let y=0;y<=H;y+=40){s.beginPath();s.moveTo(0,y+.5);s.lineTo(W,y+.5);s.stroke();}
+  s.restore();
+  s.lineJoin='round';s.lineCap='round';
+  path();s.lineWidth=WALL+8;s.strokeStyle='#3a3020';s.stroke();
+  path();s.lineWidth=WALL;s.strokeStyle='#5d4d2f';s.stroke();
+  path();s.lineWidth=2;s.strokeStyle='#7c6842';s.stroke();
+  for(const o of shapes){
+    if(o.t==='w'){
+      s.beginPath();s.moveTo(o.x1,o.y1);s.lineTo(o.x2,o.y2);
+      s.lineWidth=o.th+6;s.strokeStyle='#3a3020';s.stroke();s.lineWidth=o.th;s.strokeStyle='#5d4d2f';s.stroke();s.lineWidth=2;s.strokeStyle='#7c6842';s.stroke();
+    }else if(o.t==='c'){
+      s.beginPath();s.arc(o.x,o.y,o.r,0,7);s.fillStyle='#6c6454';s.fill();s.lineWidth=2;s.strokeStyle='#8f856c';s.stroke();
+      s.beginPath();s.arc(o.x,o.y,o.r*.6,0,7);s.lineWidth=1;s.strokeStyle='#5a5344';s.stroke();
+    }else{
+      s.save();s.translate(o.x,o.y);s.rotate(o.a);const hw=o.w/2,hh=o.h/2;
+      if(o.kind==='crate'){
+        s.fillStyle='#735928';s.fillRect(-hw,-hh,o.w,o.h);s.lineWidth=2;s.strokeStyle='#9a7a3c';s.strokeRect(-hw+2,-hh+2,o.w-4,o.h-4);
+        s.strokeStyle='#54401c';s.beginPath();s.moveTo(-hw+4,-hh+4);s.lineTo(hw-4,hh-4);s.moveTo(hw-4,-hh+4);s.lineTo(-hw+4,hh-4);s.stroke();
+      }else if(o.kind==='couch'){
+        s.fillStyle='#5b3a2e';s.beginPath();if(s.roundRect)s.roundRect(-hw,-hh,o.w,o.h,8);else s.rect(-hw,-hh,o.w,o.h);s.fill();
+        s.fillStyle='#6e4738';s.fillRect(-hw+10,-hh+12,o.w-20,o.h-16);
+        s.strokeStyle='#4a2e24';s.lineWidth=2;s.beginPath();s.moveTo(0,-hh+12);s.lineTo(0,hh-4);s.stroke();
+      }else{
+        s.fillStyle='#4d4943';s.fillRect(-hw,-hh,o.w,o.h);s.strokeStyle='#6f6a60';s.lineWidth=2;
+        for(let i=1;i<4;i++){s.beginPath();s.moveTo(-hw+3,-hh+i*o.h/4);s.lineTo(hw-3,-hh+i*o.h/4);s.stroke();}
+      }
+      s.restore();
+    }
+  }
+}
+
+// ---------- state ----------
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+const DIFF={easy:{sSpeed:.85,susp:.65,spin:[9,14],bold:.12,hSpeed:.9},normal:{sSpeed:1,susp:1,spin:[6,10],bold:.25,hSpeed:1},hard:{sSpeed:1.15,susp:1.45,spin:[4,7],bold:.45,hSpeed:1.1}};
+const ROOM_NAMES=['','Small room','Small room','Medium room','Standard room','Large room','Large room'];
+let diff='normal',count=3,mode=null,st='menu',time=0,seeker=null,player=null,bots=[],ripples=[],marks=[],signals=[],caught=0,canTag=false,noiseLvl=0,toastT=0;
+let gameType='tag';try{const g=localStorage.getItem('fhs-type');if(g==='tag'||g==='survive'||g==='infect')gameType=g;}catch(e){}
+// round time and map size: picked automatically from the hider count, then adjustable
+const SIZE_NAMES=['','Tiny','Small','Medium','Standard','Large','Huge'];
+// one clock for everyone: same for Tag and Survive, hider and seeker; only the hider count changes it
+const recTime=()=>Math.max(30,Math.min(120,60+10*count));
+const recSize=()=>Math.min(6,count+(gameType==='infect'?1:0));
+let roundTime=90,mapSize=3;
+// infection: everyone caught becomes an extra seeker (hunters); the last one found wins
+let hunters=[],startedAs='hide';
+const nm=e=>e&&e.name?e.name:'a bot';
+function allHunters(){const a=[];if(mode==='seek'&&player)a.push(player);if(seeker)a.push(seeker);for(const h of hunters)a.push(h);return a;}
+function aiHunters(){return[seeker,...hunters].filter(s=>s&&!s.puppet&&(s.ai||!online.on));}
+// the seeker a hider should worry about: one whose beam it's in, else the closest
+function threatFor(h){let best=null,bd=1e9;for(const s of allHunters()){if(inBeam({x:s.x,y:s.y,aim:s.aim||0,half:HALF,range:RANGE},h.x,h.y))return s;const d=dist(s,h);if(d<bd){bd=d;best=s;}}return best||seeker||player;}
+function infect(t){
+  marks.push({x:t.x,y:t.y,t:0});ripple(t.x,t.y,90,'beam',.7);sfx.pop(panFor(t.x));caught++;
+  if(t===player){
+    // you become a seeker with your own flashlight
+    player.infected=true;player.r=14;player.aim=player.moveDir||0;player.susp=0;player.inLight=false;player.noise=0;mode='seek';
+    toast('You were caught! You\'re a seeker now. Find the rest');
+    $('hObj').textContent='You\'re a seeker now. Help catch the last hiders';
+    $('hMode').textContent=$('hMode').textContent.replace('Hiding','Seeking');
+    $('hMeterLbl').hidden=true;$('hMeterWrap').hidden=true;$('hNoiseBox').hidden=true;$('hPrompt').hidden=true;
+    $('hPipsLbl').textContent='Caught';$('hPips').hidden=false;$('hPipsLbl').hidden=false;$('hPips').innerHTML='<span></span>'.repeat(count);
+    setKeys();
+  }else{
+    bots=bots.filter(b=>b!==t);
+    const h=newSeeker(t);h.state='look';h.timer=.8;h.lookDir=1;h.aim=t.moveDir||0;h.name=t.name;h.infected=true;hunters.push(h);
+    toast(mode==='hide'?nm(t)+' was caught and is seeking now':'Caught one! They\'re seeking with you now');
+  }
+}
+// infection: round ends when only one hider is left (they win), or when time runs out
+function infectCheck(){
+  const left=(mode==='hide'?[player]:[]).concat(bots).filter(h=>h&&!h.caught);
+  if(startedAs==='seek'&&online&&!online.on){
+    if(!left.length)return end(true,'You caught everyone!','Every hider was found before time ran out.');
+    if(time<=0)return end(false,'Time\'s up',left.length+' still hiding when time ran out.');
+    return;
+  }
+  if(count>1&&left.length<=1){
+    const last=left[0];
+    if(last===player)return end(true,'Last one standing!','Everyone else got caught. You win the round.');
+    return end(false,'Round over',last?nm(last)+' was the last one standing.':'Everyone was caught.');
+  }
+  if(count<=1&&!left.length)return end(startedAs==='seek','Caught!',startedAs==='seek'?'You caught the only hider.':'The seeker caught you.');
+  if(time<=0){
+    if(mode==='hide')return end(true,'Time\'s up!','You were still hiding when time ran out.');
+    return end(false,'Time\'s up',left.length+' still hiding when time ran out.');
+  }
+}
+let match={round:0,wins:0,losses:0,history:[],over:false};
+let view={s:1,ox:0,oy:0};
+const keys=new Set();let mouse=null;
+
+function newSeeker(t){return{x:t.x,y:t.y,r:14,aim:rand(0,6.28),moveDir:0,state:'patrol',path:[],timer:0,sweep:0,nextSpin:rand(6,10),spinT:0,lastSeen:9,lastKnown:null,repath:0,target:null,lookDir:1,alert:0};}
+function newBot(t){return{x:t.x+rand(-4,4),y:t.y+rand(-4,4),r:12,state:'hide',path:[],timer:rand(0,2),lit:0,susp:0,noise:0,moveDir:rand(0,6.28),stepT:rand(0,1),repath:0,caught:false,visible:false};}
+// time rings (Survive only): stand in one for ZONE_T seconds to cut ZONE_CUT seconds off the clock; each works once
+// tag circle: get within this distance of the seeker, from any side, to tag it
+const TAG_R=70;
+// in the beam this close = caught instantly; running this close = the seeker hears you and spins around
+const CLOSE_R=130,HEAR_RUN=240;
+const ZONE_T=5,ZONE_CUT=20,ZONE_R=34,ZONE_MOVE=30;
+let zones=[],zoneSpots=[],zoneMoveT=ZONE_MOVE,beacons=[];
+const BEACON_T=8;
+function makeZones(){
+  zones=[];beacons=[];if(gameType!=='survive')return;
+  const want=mapSize>=4?2:1;
+  // the most open spots: largest distance to any wall or object
+  const scored=floorTiles.map(t=>{let r=20;while(r<240&&!solidAt(t.x,t.y,r+10))r+=10;return{t,r};}).sort((a,b)=>b.r-a.r);
+  // pool of open spots the rings can move between
+  const minR=Math.max(70,scored[0].r*.6);
+  zoneSpots=scored.filter(c=>c.r>=minR).map(c=>c.t);
+  if(zoneSpots.length<12)zoneSpots=scored.slice(0,40).map(c=>c.t);
+  zoneMoveT=ZONE_MOVE;
+  for(const c of scored){
+    if(zones.length>=want)break;
+    if(zones.some(z=>dist(z,c.t)<Math.min(W,H)*.45))continue;
+    zones.push({x:c.t.x,y:c.t.y,R:ZONE_R,prog:0,used:false,pulse:0,appear:0,warned:false});
+  }
+}
+function zoneUsers(){return mode==='hide'?[player,...bots]:bots;}
+// move a ring to another open spot: away from where it was, the other ring, and everyone standing around
+function moveZone(z){
+  const sep=Math.min(W,H)*.35,people=[player,seeker,...bots].filter(e=>e&&!e.caught);
+  let opts=zoneSpots.filter(t=>dist(t,z)>sep&&zones.every(o=>o===z||dist(o,t)>sep)&&people.every(e=>dist(e,t)>110));
+  if(!opts.length)opts=zoneSpots.filter(t=>dist(t,z)>sep*.6);
+  if(!opts.length)return;
+  const t=pick(opts.slice(0,Math.max(8,Math.floor(opts.length*.5))));
+  ripple(z.x,z.y,70,'zone',.6);
+  z.x=t.x;z.y=t.y;z.prog=0;z.appear=1;z.warned=false;
+  for(const b of bots)if(b.zone===z){b.zone=null;if(b.state==='zone'){b.state='hide';b.path=[];}}
+}
+function updateZones(dt){
+  beacons=beacons.filter(b=>(b.t+=dt)<BEACON_T);
+  if(zones.some(z=>!z.used)){
+    zoneMoveT-=dt;
+    if(zoneMoveT<=0){zoneMoveT=ZONE_MOVE;let moved=false;for(const z of zones)if(!z.used){moveZone(z);moved=true;}
+      if(moved){sfx.zoneMove();toast('The time ring moved');if(online.on)sendEv({k:'zoneMoved'});
+        // the bot seeker goes to check the new spot
+        if(mode==='hide'&&seeker&&(!online.on||seeker.ai)&&seeker.state!=='chase'){const z=pick(zones.filter(q=>!q.used));seeker.target={x:z.x,y:z.y};seeker.path=findPath(seeker.x,seeker.y,z.x,z.y);seeker.state='investigate';}}}
+  }
+  for(const z of zones){
+    z.appear=Math.max(0,z.appear-dt*1.5);
+    z.pulse=Math.max(0,z.pulse-dt);
+    if(z.used)continue;
+    const on=zoneUsers().some(e=>e&&!e.caught&&Math.hypot(e.x-z.x,e.y-z.y)<z.R);
+    if(on){
+      z.prog+=dt;
+      if(z.prog>=ZONE_T){
+        z.used=true;z.pulse=1.2;time=Math.max(0,time-ZONE_CUT);sfx.zone(panFor(z.x));ripple(z.x,z.y,140,'zone',1);
+        // leave a marker so the seeker knows someone was just here
+        beacons.push({x:z.x,y:z.y,t:0});if(online.on)sendEv({k:'zoneDone',x:Math.round(z.x),y:Math.round(z.y)});
+        toast(mode==='hide'?'−'+ZONE_CUT+' seconds! The seeker knows someone was here':'A hider cut '+ZONE_CUT+' seconds off the clock! Check the marker');
+        if(mode==='hide'&&seeker&&(!online.on||seeker.ai)){seeker.target={x:z.x,y:z.y};seeker.path=findPath(seeker.x,seeker.y,z.x,z.y);seeker.state='investigate';seeker.alert=1.5;}
+      }
+      // the seeker always learns when someone is standing in a ring
+      // you (as seeker) are told right away; the bot seeker reacts after 2s so a far-away ring can still be finished
+      if(z.prog>(mode==='seek'?.6:2)&&!z.warned){z.warned=true;
+        if(mode==='seek'){toast('A hider is standing in a time ring!');sfx.zoneWarn(panFor(z.x));}
+        else if(online.on&&seeker&&!seeker.ai)sendEv({k:'zoneWarn',x:Math.round(z.x)});
+        else if(seeker&&seeker.state!=='chase'){seeker.target={x:z.x,y:z.y};seeker.path=findPath(seeker.x,seeker.y,z.x,z.y);seeker.state='investigate';seeker.alert=1;}
+      }
+    }else{z.prog=Math.max(0,z.prog-dt*2);if(z.prog===0)z.warned=false;}
+  }
+}
+function demo(){zones=[];hunters=[];mode=null;player=null;bots=[];ripples=[];marks=[];signals=[];loadMap(mapSize);seeker=newSeeker(pick(floorTiles));fitView();}
+
+function startMatch(m){mode=m;startedAs=m;match={round:0,wins:0,losses:0,history:[],over:false};startRound();}
+function startRound(){
+  match.round++;
+  ripples=[];marks=[];signals=[];caught=0;canTag=false;noiseLvl=0;keys.clear();mouse=null;sneakLatch=false;hunters=[];startedAs=mode;
+  const cfg=DIFF[diff];loadMap(mapSize);
+  if(mode==='hide'){
+    seeker=newSeeker(pick(floorTiles));seeker.nextSpin=rand(...cfg.spin);
+    const pt=farTile(seeker);player={x:pt.x,y:pt.y,r:12,moveDir:0,noise:0,stepT:0,susp:0};
+    bots=[];for(let i=1;i<count;i++)bots.push(newBot(farTile(seeker,[player,...bots])));
+    seeker.aim=angTo(seeker,player)+Math.PI;
+    time=roundTime;
+  }else{
+    const pt=pick(floorTiles);player={x:pt.x,y:pt.y,r:14,aim:0,moveDir:0};seeker=null;
+    bots=[];for(let i=0;i<count;i++)bots.push(newBot(farTile(player,bots)));
+    time=roundTime;
+  }
+  fitView();
+  st='play';
+  $('menu').hidden=true;$('over').hidden=true;$('paused').hidden=true;$('hud').hidden=false;
+  const hide=mode==='hide',plural=count===1?'':'s';
+  $('hMode').textContent='Round '+match.round+' of 3 · '+match.wins+'–'+match.losses+' · '+(hide?'Hiding':'Seeking');
+  $('hObj').textContent=gameType==='infect'?(hide?'Don\'t get caught. Be the last one found':'Catch everyone before time runs out'):hide?(gameType==='survive'?'Stay hidden until the timer runs out':'Get inside the seeker\'s circle and tag it'):'Find all '+count+' hider'+plural;
+  $('hMeterLbl').hidden=!hide;$('hMeterWrap').hidden=!hide;$('hNoiseBox').hidden=!hide;
+  const showPips=!hide||count>1;$('hPips').hidden=!showPips;$('hPipsLbl').hidden=!showPips;
+  $('hPipsLbl').textContent=hide?'Team still hiding':'Caught';
+  $('hPips').innerHTML=hide?'<span></span>'+'<span class="mate"></span>'.repeat(count-1):'<span></span>'.repeat(count);
+  setKeys();
+  makeZones();
+  toast(gameType==='survive'?'Round '+match.round+' · green rings cut '+ZONE_CUT+'s off the clock':gameType==='infect'?'Round '+match.round+' · anyone caught becomes a seeker':'Round '+match.round);audio();sfx.click();
+  cv.focus();
+}
+function end(win,title,text){
+  st='over';$('hPrompt').hidden=true;win?sfx.win():sfx.lose();
+  match.history.push(win);if(win)match.wins++;else match.losses++;
+  const done=match.wins>=2||match.losses>=2;match.over=done;
+  const score=' Match score: '+match.wins+'–'+match.losses+'.';
+  if(done){
+    const won=match.wins>=2;
+    $('oTitle').textContent=won?'You won the match!':'You lost the match';
+    $('oText').textContent='Round '+match.round+': '+title+' '+text+score;
+    $('oTitle').style.color=won?'var(--win)':'var(--danger)';$('again').classList.toggle('winbtn',won);
+    $('again').textContent='Play again';
+  }else{
+    $('oTitle').textContent='Round '+match.round+': '+title;
+    $('oText').textContent=text+score;
+    $('oTitle').style.color=win?'var(--win)':'var(--danger)';$('again').classList.toggle('winbtn',win);
+    $('again').textContent='Next round';
+  }
+  $('oRounds').innerHTML=[0,1,2].map(i=>{const r=match.history[i];return '<span class="'+(r===true?'w':r===false?'l':'')+'">'+(r===true?'Won':r===false?'Lost':'Round '+(i+1))+'</span>';}).join('');
+  $('over').hidden=false;
+}
+const STEER={keys:'WASD',forward:'Forward to mouse',follow:'Follow mouse'};
+const STEER_NOTE={keys:'WASD or arrow keys move. The mouse only aims the flashlight.',forward:'Hold W or ↑ to walk toward the mouse. Let go to stop.',follow:'Move the mouse and you walk to it, then stop when you get there.'};
+function setKeys(){
+  const hide=mode==='hide';
+  const mv=steerMode==='keys'?'<span><b>WASD</b> move</span>':steerMode==='forward'?'<span><b>W / ↑</b> walk to mouse</span>':'<span><b>MOUSE</b> walk to pointer</span>';
+  $('hKeys').innerHTML=mv+(hide?'<span><b>SPACE</b> sneak (hold or tap)</span>'+(gameType==='tag'&&!(player&&player.infected)?'<span><b>E</b> tag</span>':''):(steerMode==='keys'?'<span><b>MOUSE</b> aim light</span>':''))+'<span><b>M</b> '+STEER[steerMode]+'</span><span><b>N</b> sound</span><span><b>B</b> music</span><span><b>ESC</b> pause</span>';
+}
+function setSteer(v){
+  steerMode=STEER[v]?v:'keys';try{localStorage.setItem('fhs-steer2',steerMode);}catch(e){}
+  document.querySelectorAll('.chip[data-steer]').forEach(c=>c.setAttribute('aria-pressed',c.dataset.steer===steerMode));
+  const n=$('steerNote');if(n)n.textContent=STEER_NOTE[steerMode]+' Press M in game to switch.';
+  if(player){player.goal=null;player.path=[];}
+  if(st==='play'||st==='paused'){setKeys();toast('Steering: '+STEER[steerMode]);}
+}
+function toMenu(){$('again').disabled=false;$('quit2').textContent='Main menu';st='menu';$('over').hidden=true;$('paused').hidden=true;$('hud').hidden=true;$('menu').hidden=false;demo();}
+function toast(t){$('hToast').textContent=t;$('hToast').hidden=false;toastT=1.8;}
+function inBeam(L,x,y){const d=Math.hypot(x-L.x,y-L.y);if(d>L.range)return false;if(Math.abs(angDiff(Math.atan2(y-L.y,x-L.x),L.aim))>L.half)return false;return los(L.x,L.y,x,y);}
+function ripple(x,y,max,col,life){ripples.push({x,y,max,col,t:0,life:life||0.9});}
+// a noise: points from you toward roughly where it came from (a little off on purpose)
+function signal(x,y,loud){
+  if(!player)return;
+  const ang=Math.atan2(y-player.y,x-player.x)+rand(-.28,.28);
+  const d=Math.hypot(x-player.x,y-player.y),vol=(loud?.5:.3)*Math.max(.25,volFor(d,900));
+  sfx.rustle(vol,panFor(x));
+  if(signals.some(g=>Math.abs(angDiff(g.ang,ang))<.5&&g.t<1))return;
+  signals.push({ang,t:0,life:1.8,loud:!!loud});
+}
+
+// ---------- sound (synthesized, no files) ----------
+let soundOn=true;try{soundOn=localStorage.getItem('fhs-sound')!=='0';}catch(e){}
+let ac=null,master=null,noiseBuf=null,ambient=null,beatT=0;
+let musicOn=true;try{musicOn=localStorage.getItem('fhs-music')!=='0';}catch(e){}
+let musicGain=null;
+// only one copy of the game makes sound: when a newer copy opens (e.g. after an update), older ones go silent
+let gestured=false;
+const AUDIO_ID=Math.random().toString(36).slice(2);
+let audioBus=null;try{audioBus=new BroadcastChannel('fhs-audio');audioBus.onmessage=e=>{if(e.data&&e.data.claim&&e.data.claim!==AUDIO_ID){gestured=false;if(ac){try{ac.close();}catch(_){}ac=null;master=null;musicGain=null;}}};}catch(e){}
+addEventListener('pagehide',()=>{if(ac){try{ac.close();}catch(_){}}});
+function audio(){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!gestured)return null;
+  if(!ac&&AC){try{
+    ac=new AC();master=ac.createGain();master.gain.value=soundOn?.8:0;master.connect(ac.destination);
+    noiseBuf=ac.createBuffer(1,ac.sampleRate,ac.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+    // low room hum (the "music"): its own on/off switch, same loudness as before
+    musicGain=ac.createGain();musicGain.gain.value=musicOn?1:0;musicGain.connect(ac.destination);
+    ambient=ac.createGain();ambient.gain.value=.035*.8;ambient.connect(musicGain);
+    for(const f of[55,82.4]){const o=ac.createOscillator();o.type='sine';o.frequency.value=f;o.detune.value=Math.random()*8;o.connect(ambient);o.start();}
+    // slow pulse: the hum swells and fades about every 2 seconds (same average loudness)
+    const lfo=ac.createOscillator(),depth=ac.createGain();lfo.type='sine';lfo.frequency.value=.5;depth.gain.value=.035*.8*.45;lfo.connect(depth);depth.connect(ambient.gain);lfo.start();
+  }catch(e){ac=null;}}
+  if(ac&&ac.state==='suspended')ac.resume().catch(()=>{});
+  return ac&&soundOn?ac:null;
+}
+function out(pan){
+  if(ac.createStereoPanner){const p=ac.createStereoPanner();p.pan.value=Math.max(-1,Math.min(1,pan||0));p.connect(master);return p;}
+  return master;
+}
+function env(g,t,peak,dur){g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(Math.max(.0002,peak),t+.008);g.gain.exponentialRampToValueAtTime(.0001,t+dur);}
+function noiseHit(vol,pan,type,freq,dur,q){
+  const a=audio();if(!a||vol<.01)return;const t=a.currentTime;
+  const src=a.createBufferSource();src.buffer=noiseBuf;src.playbackRate.value=rand(.8,1.2);
+  const f=a.createBiquadFilter();f.type=type;f.frequency.value=freq;f.Q.value=q||1;
+  const g=a.createGain();env(g,t,vol,dur);src.connect(f);f.connect(g);g.connect(out(pan));src.start(t,rand(0,.5));src.stop(t+dur+.05);
+}
+function tone(freq,vol,dur,type,pan,delay,slide){
+  const a=audio();if(!a||vol<.01)return;const t=a.currentTime+(delay||0);
+  const o=a.createOscillator();o.type=type||'sine';o.frequency.setValueAtTime(freq,t);if(slide)o.frequency.exponentialRampToValueAtTime(slide,t+dur);
+  const g=a.createGain();env(g,t,vol,dur);o.connect(g);g.connect(out(pan));o.start(t);o.stop(t+dur+.05);
+}
+const panFor=(x)=>player?Math.max(-1,Math.min(1,(x-player.x)/450)):0;
+const volFor=(d,maxD)=>Math.max(0,1-d/maxD);
+// hearing: loud up close, never fully silent anywhere in the room
+const hear=d=>Math.max(.12,1/(1+(d/260)**2));
+// footstep: heel then toe, each a short muffled thump (no bright hiss), plus a soft low body thud
+function thump(t,vol,pan,freq,dur){
+  const src=ac.createBufferSource();src.buffer=noiseBuf;src.playbackRate.value=rand(.6,.9);
+  const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=freq*rand(.85,1.15);lp.Q.value=.8;
+  const lp2=ac.createBiquadFilter();lp2.type='lowpass';lp2.frequency.value=freq*1.4;
+  const g=ac.createGain();g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.003);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  src.connect(lp);lp.connect(lp2);lp2.connect(g);g.connect(out(pan));src.start(t,rand(0,.8));src.stop(t+dur+.02);
+}
+function footstep(vol,pan,heavy){
+  const a=audio();if(!a||vol<.006)return;const t=a.currentTime;
+  vol=Math.min(.9,vol*1.6);
+  thump(t,vol,pan,heavy?520:700,heavy?.075:.06);
+  thump(t+rand(.05,.075),vol*.5,pan,heavy?650:850,.045);
+  const o=a.createOscillator();o.type='sine';o.frequency.setValueAtTime(heavy?105:130,t);o.frequency.exponentialRampToValueAtTime(heavy?48:60,t+.06);
+  const g=a.createGain();g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol*(heavy?.7:.4),t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+.07);
+  o.connect(g);g.connect(out(pan));o.start(t);o.stop(t+.09);
+}
+const sfx={
+  rustle:(vol,pan)=>{footstep(vol*.8,pan,false);setTimeout(()=>footstep(vol*.6,pan,false),140);},
+  heartbeat:(vol)=>{tone(52,vol,.16,'sine',0,0,40);tone(48,vol*.8,.16,'sine',0,.16,38);},
+  // seeker only: a hider just stepped into your light
+  // seeker's light lands on a hider: a quick, bright pop
+  spotted:(pan)=>{tone(1250,.22,.06,'sine',pan,0,320);},
+  // the seeker got tagged out: the buzzer
+  buzzer:()=>{tone(110,.22,.22,'sawtooth',0,0,82);noiseHit(.18,0,'lowpass',500,.2,1);tone(110,.16,.18,'sawtooth',0,.12,80);},
+  pop:(pan)=>{tone(900,.32,.09,'sine',pan,0,140);},
+  // hider in the seeker's beam: a two-tone warning siren
+  alarm:()=>{tone(740,.11,.16,'square',0,0,700);tone(560,.11,.16,'square',0,.18,530);},
+  // ring finished: a deep boom that carries across the room, from the ring's side
+  zone:(pan)=>{noiseHit(.6,pan,'lowpass',300,.9,.8);tone(70,.35,.7,'sine',pan,0,40);setTimeout(()=>noiseHit(.4,pan,'lowpass',500,.5,.8),180);},
+  zoneMove:()=>{noiseHit(.22,0,'lowpass',500,.45,.7);},
+  zoneWarn:(pan)=>{noiseHit(.3,pan,'lowpass',420,.18,1.2);setTimeout(()=>noiseHit(.3,pan,'lowpass',420,.18,1.2),220);},
+  win:()=>{},lose:()=>{},click:()=>{},alert:()=>{},caughtOne:()=>{},teammateLost:()=>{},
+};
+// ---------- music = the low background hum, switched separately from sound effects ----------
+function setMusic(v){
+  musicOn=v;try{localStorage.setItem('fhs-music',v?'1':'0');}catch(e){}
+  audio();if(musicGain&&ac){musicGain.gain.cancelScheduledValues(ac.currentTime);musicGain.gain.setValueAtTime(v?1:0,ac.currentTime);}
+  const b=$('musicBtn');if(b){b.setAttribute('aria-pressed',v);b.textContent=v?'On':'Off';}
+  if(st==='play'||st==='paused')toast('Music '+(v?'on':'off'));
+}
+// the browser only allows audio after the first click or key press
+// the copy you click or type in is the one that plays; every other copy (previews, older versions) goes silent
+function claimAudio(){gestured=true;audio();try{audioBus&&audioBus.postMessage({claim:AUDIO_ID});}catch(_){}}
+addEventListener('pointerdown',claimAudio);addEventListener('keydown',claimAudio);
+// pause all audio while this copy isn't on screen
+document.addEventListener('visibilitychange',()=>{if(!ac)return;if(document.hidden)ac.suspend().catch(()=>{});else if(gestured)ac.resume().catch(()=>{});});
+function setSound(v){
+  soundOn=v;try{localStorage.setItem('fhs-sound',v?'1':'0');}catch(e){}
+  if(v)audio();if(master)master.gain.value=v?.8:0;
+  const b=$('soundBtn');if(b){b.setAttribute('aria-pressed',v);b.textContent=v?'On':'Off';}
+  if(st==='play'||st==='paused')toast('Sound '+(v?'on':'off'));
+}
+// in-game sounds that depend on distance
+// footsteps for everyone who walks: one step per stride, louder and stereo-panned by distance
+function strides(e,dt,stride,play){
+  const mv=Math.hypot(e.x-(e.sx??e.x),e.y-(e.sy??e.y));e.sx=e.x;e.sy=e.y;
+  if(mv>25){e.stepAcc=0;return;}
+  e.stepAcc=(e.stepAcc||0)+mv;
+  if(e.stepAcc>=stride){e.stepAcc-=stride;play(mv/Math.max(dt,.001));}
+}
+let alarmT=0;
+function soundTick(dt){
+  if(!soundOn||!ac||st!=='play'||!player)return;
+  const sneaking=mode==='hide'&&isSneaking();
+  strides(player,dt,mode==='seek'?40:(sneaking?26:36),()=>footstep(mode==='seek'?.22:(sneaking?.05:.2),0,mode==='seek'));
+  let prox=0;
+  for(const h of hunters){if(h!==player)strides(h,dt,40,()=>footstep(.5*hear(dist(h,player)),panFor(h.x),true));}
+  if(mode==='seek'&&seeker&&seeker!==player)strides(seeker,dt,40,()=>footstep(.5*hear(dist(seeker,player)),panFor(seeker.x),true));
+  if(mode==='hide'&&seeker){
+    const d=Math.min(dist(seeker,player),...hunters.map(h=>dist(h,player)));
+    strides(seeker,dt,40,()=>footstep(.55*hear(dist(seeker,player)),panFor(seeker.x),true));
+    // danger: a seeker is close or starting to spot you
+    prox=Math.max(Math.min(1,player.susp),volFor(d,320));
+    // alarm while you're standing in the beam
+    alarmT-=dt;
+    if(player.inLight&&alarmT<=0){sfx.alarm();alarmT=.42;}
+    if(!player.inLight)alarmT=0;
+  }
+  for(const b of bots){
+    if(b.caught)continue;
+    const d=dist(b,player);
+    strides(b,dt,30,sp=>footstep((sp>110?.32:.12)*hear(d),panFor(b.x),false));
+    // as the seeker: a hider sneaking up close, especially behind you, raises your heartbeat
+    if(mode==='seek'){const behind=Math.abs(angDiff(angTo(player,b),player.aim))>1.9;prox=Math.max(prox,volFor(d,behind?280:200)*(b.state==='stalk'?1:.7));}
+  }
+  // heartbeat speeds up with danger, in both modes
+  beatT-=dt;
+  if(prox>.12&&beatT<=0){sfx.heartbeat(.18+.5*prox);beatT=1.15-.75*prox;}
+}
+
+// ---------- bot seeker (hunts the player and any bot teammates) ----------
+function updateBotSeeker(dt,s){
+  s=s||seeker;const cfg=DIFF[diff];
+  s.sweep+=dt;s.alert=Math.max(0,s.alert-dt);
+  const L={x:s.x,y:s.y,aim:s.aim,half:HALF,range:RANGE};
+  const targets=player?[...(mode==='hide'&&!player.infected?[player]:[]),...bots].filter(t=>t&&!t.caught):[];
+  let sawAny=false;
+  for(const t of targets){
+    const d=dist(s,t),touch=d<s.r+t.r+6,seen=touch||inBeam(L,t.x,t.y);
+    t.inLight=seen;if(seen){const k=touch?6:(1.75-d/RANGE)*.75;t.susp+=dt*k*cfg.susp;if(d<CLOSE_R)t.susp=1;s.lastKnown={x:t.x,y:t.y};sawAny=true;}
+    else t.susp=Math.max(0,t.susp-dt*.45);
+    if(t.susp>=1){
+      if(online.on){netCaught(t);s.state='look';s.timer=1.2;s.lookDir=1;continue;}
+      if(gameType==='infect'){infect(t);s.state='look';s.timer=1;s.lookDir=1;continue;}
+      if(t===player){sfx.pop(0);return end(false,'Caught!','The seeker spotted you in its beam.');}
+      t.caught=true;sfx.pop(panFor(t.x));marks.push({x:t.x,y:t.y,t:0});ripple(t.x,t.y,90,'beam',.7);
+      const left=bots.filter(b=>!b.caught).length;toast('A teammate got caught. '+left+' bot'+(left===1?'':'s')+' left');
+      s.state='look';s.timer=1.2;s.lookDir=1;
+    }
+  }
+  if(sawAny){s.lastSeen=0;if(s.state!=='chase'){s.state='chase';s.repath=0;if(player&&st==='play')sfx.alert();}}else s.lastSeen+=dt;
+  // someone running close by: whip the flashlight around toward the sound right away
+  for(const t of targets){const d=dist(s,t);if(t.noise>=150&&d<HEAR_RUN){s.faceAng=angTo(s,t);s.faceT=.5;s.alert=1;if(s.state!=='chase'){s.state='investigate';s.target={x:t.x,y:t.y};s.path=findPath(s.x,s.y,t.x,t.y);}break;}}
+  if(s.state!=='chase'){
+    for(const t of targets){const d=dist(s,t);if(t.noise>0&&d<t.noise){
+      let tx=t.x+rand(-45,45),ty=t.y+rand(-45,45);if(solidPoint(tx,ty)){tx=t.x;ty=t.y;}
+      s.target={x:tx,y:ty};s.path=findPath(s.x,s.y,tx,ty);s.state='investigate';s.alert=1;break;}}
+  }
+  const sp=72*cfg.sSpeed;let desired=s.aim,rate=3;
+  switch(s.state){
+    case'patrol':{const zt=zones.filter(z=>!z.used);if(!s.path.length&&player&&zt.length&&Math.random()<.3){const z=pick(zt);s.path=findPath(s.x,s.y,z.x+rand(-30,30),z.y+rand(-30,30));}if(!s.path.length){const far=floorTiles.filter(t=>dist(t,s)>240);for(let k=0;k<6&&!s.path.length;k++){const t=pick(far.length?far:floorTiles);s.path=findPath(s.x,s.y,t.x,t.y);}}
+      if(follow(s,sp,dt)){s.state='look';s.timer=rand(1.2,2.4);s.lookDir=Math.random()<.5?-1:1;}
+      desired=s.moveDir+Math.sin(s.sweep*1.7)*.55;break;}
+    case'look':{s.timer-=dt;s.aim+=s.lookDir*1.5*dt;desired=s.aim;if(s.timer<=0)s.state='patrol';break;}
+    case'investigate':{const arrived=follow(s,sp*1.5,dt);
+      desired=dist(s,s.target)<170?angTo(s,s.target):s.moveDir+Math.sin(s.sweep*2.2)*.35;rate=4;
+      if(arrived){s.state='look';s.timer=rand(1.8,3);s.lookDir=Math.random()<.5?-1:1;}break;}
+    case'chase':{s.repath-=dt;if(s.repath<=0&&s.lastKnown){s.path=findPath(s.x,s.y,s.lastKnown.x,s.lastKnown.y);s.repath=.3;}
+      follow(s,sp*1.85,dt);if(s.lastKnown)desired=angTo(s,s.lastKnown);rate=6;
+      if(s.lastSeen>1.2){s.state='investigate';s.target=s.lastKnown;s.path=findPath(s.x,s.y,s.target.x,s.target.y);}break;}
+  }
+  s.nextSpin-=dt;
+  if(player&&s.nextSpin<=0&&s.state!=='chase'){s.spinT=1.1;s.nextSpin=rand(...cfg.spin);s.spinBase=s.aim+Math.PI;}
+  if(s.spinT>0){s.spinT-=dt;desired=s.spinBase;rate=5.5;}
+  if(s.faceT>0){s.faceT-=dt;s.aim=rotTo(s.aim,s.faceAng,14*dt);}
+  else if(s.state!=='look')s.aim=rotTo(s.aim,desired,rate*dt);
+  if(player&&s===seeker){const d=dist(s,player);canTag=gameType==='tag'&&d<TAG_R;}
+}
+
+// ---------- player as hider ----------
+let steerMode='keys';
+try{const v=localStorage.getItem('fhs-steer2')||(localStorage.getItem('fhs-steer')==='1'?'forward':'keys');if(STEER[v])steerMode=v;}catch(e){}
+const worldMouse=()=>mouse?{x:(mouse.x-view.ox)/view.s,y:(mouse.y-view.oy)/view.s}:null;
+// mouse steering: forward walks toward the pointer (the seeker follows its light), back walks away
+function readSteer(p){
+  const fwd=keys.has('w')||keys.has('arrowup'),back=keys.has('s')||keys.has('arrowdown');
+  if(fwd===back)return null;
+  let a;
+  if(mode==='seek')a=p.aim;
+  else{const m=worldMouse();if(!m||Math.hypot(m.x-p.x,m.y-p.y)<10)return null;a=Math.atan2(m.y-p.y,m.x-p.x);}
+  if(back)a+=Math.PI;
+  return[Math.cos(a),Math.sin(a)];
+}
+function readMove(p){if(steerMode==='forward')return readSteer(p);let vx=0,vy=0;
+  if(keys.has('w')||keys.has('arrowup'))vy--;if(keys.has('s')||keys.has('arrowdown'))vy++;
+  if(keys.has('a')||keys.has('arrowleft'))vx--;if(keys.has('d')||keys.has('arrowright'))vx++;
+  const l=Math.hypot(vx,vy);return l?[vx/l,vy/l]:null;}
+// follow-mouse steering: walk a path to the last place the mouse moved to, then stop there
+function followMove(p,speed,dt){
+  if(!p.goal)return false;
+  p.repathT=(p.repathT||0)-dt;
+  if(p.goalDirty&&p.repathT<=0){p.path=findPath(p.x,p.y,p.goal.x,p.goal.y);if(!p.path.length)p.path=[{x:p.goal.x,y:p.goal.y}];p.goalDirty=false;p.repathT=.15;}
+  const ox=p.x,oy=p.y,done=follow(p,speed,dt);
+  if(done||Math.hypot(p.goal.x-p.x,p.goal.y-p.y)<6){p.goal=null;p.path=[];}
+  return Math.hypot(p.x-ox,p.y-oy)>.05;
+}
+function updateHiderPlayer(dt){
+  const p=player,sneak=isSneaking(),sp=sneak?68:150;
+  let moving=false;
+  if(steerMode==='follow')moving=followMove(p,sp,dt);
+  else{const m=readMove(player);if(m){moveEnt(p,m[0]*sp*dt,m[1]*sp*dt);p.moveDir=Math.atan2(m[1],m[0]);moving=true;}}
+  if(moving){p.noise=sneak?50:230;p.stepT-=dt;
+    if(p.stepT<=0){ripple(p.x,p.y,p.noise,'you',sneak?.6:.9);p.stepT=sneak?.7:.32;}}
+  else{p.noise=0;p.stepT=0;}
+  noiseLvl+=(p.noise-noiseLvl)*Math.min(1,dt*8);
+}
+// ---------- player as seeker ----------
+function updateSeekerPlayer(dt){
+  const p=player;let m=null;
+  if(steerMode==='follow')followMove(p,135,dt);
+  else{m=readMove(player);if(m){moveEnt(p,m[0]*135*dt,m[1]*135*dt);p.moveDir=Math.atan2(m[1],m[0]);}}
+  // the light points at the mouse (kept steady once you're standing on the cursor)
+  const wm=worldMouse();
+  if(wm&&Math.hypot(wm.x-p.x,wm.y-p.y)>22)p.aim=rotTo(p.aim,Math.atan2(wm.y-p.y,wm.x-p.x),9*dt);
+  else if(!wm&&m)p.aim=rotTo(p.aim,p.moveDir,5*dt);
+}
+
+// ---------- hider bots (enemies in Seeker mode, teammates in Hider mode) ----------
+// seeker's movement this frame (so hiders can tell where it's heading)
+function trackVel(e,dt){if(!e)return;e.vx=(e.x-(e.pvx??e.x))/Math.max(dt,.001);e.vy=(e.y-(e.pvy??e.y))/Math.max(dt,.001);e.pvx=e.x;e.pvy=e.y;}
+const seekerHeading=S=>{const sp=Math.hypot(S.vx||0,S.vy||0);return sp>20?Math.atan2(S.vy,S.vx):S.aim;};
+// pick a hiding spot: far from the seeker, out of its sight and beam, off its path, near cover,
+// and reachable without walking past the seeker. quick=true favours nearby spots (dodging).
+// a point straight out the side of the beam (the side the hider is already on), so it leaves the light fastest
+function dodgePoint(h,S){
+  const side=angDiff(angTo(S,h),S.aim)>=0?1:-1;
+  for(const sgn of[side,-side]){const a=S.aim+sgn*Math.PI/2;
+    for(const r of[120,90,60]){const x=h.x+Math.cos(a)*r,y=h.y+Math.sin(a)*r;
+      if(!solidAt(x,y,14)&&clearWide(h.x,h.y,x,y,12))return{x,y};}}
+  return null;
+}
+function hideSpot(h,S,quick){
+  let best=null,bs=-1e9;
+  const hd=seekerHeading(S),ax=S.x+Math.cos(hd)*230,ay=S.y+Math.sin(hd)*230;
+  for(let i=0;i<70;i++){const t=pick(floorTiles),ds=dist(t,S);if(ds<200)continue;
+    let cover=0;for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++)if(!walk(t.c+dc,t.r+dr))cover++;
+    let sc=Math.min(ds,650)/650*2+(los(S.x,S.y,t.x,t.y)?0:1.6)+cover*.05+Math.random()*.3;
+    // stay out of where the beam is pointing
+    if(ds<RANGE+60&&Math.abs(angDiff(angTo(S,t),S.aim))<HALF+.35)sc-=2;
+    // stay off the seeker's path
+    const da=Math.hypot(t.x-ax,t.y-ay);if(da<260)sc-=1.3*(1-da/260);
+    // don't walk right past the seeker to get there
+    if(segDist(S.x,S.y,h.x,h.y,t.x,t.y)<150)sc-=1.6;
+    sc-=dist(h,t)/(quick?450:1400);
+    if(sc>bs){bs=sc;best=t;}}
+  return best||pick(floorTiles);
+}
+function updateBot(h,dt,S,playerSeeks){
+  const cfg=DIFF[diff],d=dist(h,S);h.moving=false;
+  const L={x:S.x,y:S.y,aim:S.aim,half:HALF,range:RANGE};
+  // the player's own light decides catches; any seeker's light makes the bot run
+  const P=playerSeeks?player:S,dP=dist(h,P),LP={x:P.x,y:P.y,aim:P.aim,half:HALF,range:RANGE};
+  const litP=inBeam(LP,h.x,h.y)||(playerSeeks&&dP<70&&los(P.x,P.y,h.x,h.y));
+  const lit=litP||(P!==S&&inBeam(L,h.x,h.y));h.visible=lit;
+  if(playerSeeks){h.alertCd=Math.max(0,(h.alertCd||0)-dt);if(lit&&!h.wasLit&&h.alertCd<=0){sfx.spotted(panFor(h.x));h.alertCd=1.2;}h.wasLit=lit;}
+  if(playerSeeks){
+    if(litP){h.lit+=dt;if(dP<CLOSE_R&&inBeam(LP,h.x,h.y))h.lit=CATCH_T;
+      if(h.lit>=CATCH_T&&gameType==='infect'){h.lit=0;infect(h);return;}
+      if(h.lit>=CATCH_T){h.caught=true;caught++;sfx.pop(panFor(h.x));marks.push({x:h.x,y:h.y,t:0});ripple(h.x,h.y,90,'beam',.7);
+        if(caught>=bots.length)end(true,'Found everyone!','You caught all '+bots.length+' hider'+(bots.length===1?'':'s')+' with '+fmt(time)+' to spare.');
+        else toast('Caught one. '+(bots.length-caught)+' left');return;}
+    }else h.lit=Math.max(0,h.lit-dt*.6);
+  }
+  if(lit&&h.state!=='flee'){h.state='flee';h.dodgeTo=dodgePoint(h,S);h.path=[];}
+  const behind=Math.abs(angDiff(angTo(S,h),S.aim))>1.9;let speed=78*cfg.hSpeed,noisy=false;
+  switch(h.state){
+    // slipping away quietly to a better spot (heard the seeker, it's heading this way, or the beam is about to sweep over)
+    case'slip':{speed=(h.dodge?110:95)*cfg.hSpeed;if(!h.path.length){const dp=h.dodge&&dodgePoint(h,S);if(dp)h.path=[dp];else{const t=hideSpot(h,S,h.dodge);h.path=findPath(h.x,h.y,t.x,t.y);}}
+      if(follow(h,speed,dt)){h.state='wait';h.timer=rand(1,2.5);h.dodge=false;}break;}
+    case'hide':{if(!h.path.length){const t=hideSpot(h,S);h.path=findPath(h.x,h.y,t.x,t.y);}if(follow(h,speed,dt)){h.state='wait';h.timer=rand(1.5,4);}break;}
+    case'wait':{h.timer-=dt;
+      const zt=zones.filter(z=>!z.used&&dist(z,S)>380&&!bots.some(o=>o!==h&&o.state==='zone'&&o.zone===z));
+      if(zt.length&&h.timer<=0&&Math.random()<dt*.5){h.zone=pick(zt);h.state='zone';h.path=findPath(h.x,h.y,h.zone.x,h.zone.y);}
+      else if(gameType==='tag'&&h.timer<=0&&behind&&d<440&&Math.random()<cfg.bold*dt*3){h.state='stalk';h.repath=0;}
+      else{
+        // stay put while it's safe; only move when there's a reason to
+        const seen=los(h.x,h.y,S.x,S.y),sp=Math.hypot(S.vx||0,S.vy||0),moving=sp>20;
+        const toward=moving&&Math.abs(angDiff(Math.atan2(S.vy,S.vx),angTo(S,h)))<.6&&d<380;
+        const heard=moving&&d<260;
+        const beamComing=d<RANGE+30&&seen&&Math.abs(angDiff(angTo(S,h),S.aim))<HALF+.45;
+        const exposed=seen&&!behind&&d<360;
+        if(beamComing){h.state='slip';h.dodge=true;h.path=[];}
+        else if(toward||heard||exposed){h.state='slip';h.dodge=false;h.path=[];}
+      }
+      break;}
+    case'stalk':{h.repath-=dt;if(h.repath<=0){let tx=S.x-Math.cos(S.aim)*24,ty=S.y-Math.sin(S.aim)*24;if(solidPoint(tx,ty)){tx=S.x;ty=S.y;}h.path=findPath(h.x,h.y,tx,ty);h.repath=.35;}
+      follow(h,speed*1.05,dt);
+      if(!behind&&d<300){h.state='hide';h.path=[];}
+      if(gameType==='tag'&&d<TAG_R){
+        if(online.on)return netEnd('hiders','Tagged!','A bot hider tagged the seeker.');
+        sfx.buzzer();
+        if(playerSeeks)return end(false,'Tagged!','A hider snuck up and tagged you.');
+        return end(true,'Your team won!','A bot teammate snuck up and tagged the seeker.');}
+      break;}
+    case'zone':{const z=h.zone;
+      if(!z||z.used||(d<230&&!behind)){h.state='hide';h.path=[];h.zone=null;break;}
+      if(Math.hypot(z.x-h.x,z.y-h.y)>z.R*.5){if(!h.path.length)h.path=findPath(h.x,h.y,z.x,z.y);follow(h,speed,dt);}
+      break;}
+    case'flee':{speed=150*cfg.hSpeed;noisy=true;
+      // first get sideways out of the light, then run for cover
+      if(h.dodgeTo){const dx=h.dodgeTo.x-h.x,dy=h.dodgeTo.y-h.y,dd=Math.hypot(dx,dy);
+        const m=dd>1?moveEnt(h,dx/dd*Math.min(speed*dt,dd),dy/dd*Math.min(speed*dt,dd)):0;h.moving=m>.05;h.moveDir=Math.atan2(dy,dx);
+        if(dd<8||m<.2){h.dodgeTo=null;const t=hideSpot(h,S);h.path=findPath(h.x,h.y,t.x,t.y);}break;}
+      if(!h.path.length){const t=hideSpot(h,S);h.path=findPath(h.x,h.y,t.x,t.y);}
+      if(follow(h,speed,dt)){h.state='wait';h.timer=rand(2,4);}break;}
+  }
+  h.noise=h.moving?(noisy?170:40):0;
+  h.stepT-=dt;
+  if(playerSeeks&&h.moving&&h.stepT<=0){
+    if(noisy){signal(h.x,h.y,true);h.stepT=1.2;}
+    else if(d<230&&Math.random()<.35){signal(h.x,h.y);h.stepT=2.6;}
+    else h.stepT=1.3;
+  }
+}
+
+// ---------- loop ----------
+const fmt=t=>{t=Math.max(0,Math.ceil(t));return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');};
+function fitView(){const sc=Math.min(1,(VW-24)/W,(VH-24)/H);view={s:sc,ox:(VW-W*sc)/2,oy:(VH-H*sc)/2};}
+function update(dt){
+  ripples=ripples.filter(r=>(r.t+=dt)<r.life);signals=signals.filter(g=>(g.t+=dt)<g.life);marks.forEach(m=>m.t+=dt);
+  if(st==='menu'){updateBotSeeker(dt);return;}
+  if(st!=='play')return;
+  if(online.on){onlineUpdate(dt);return;}
+  time-=dt;soundTick(dt);updateZones(dt);
+  if(mode==='hide'){
+    updateHiderPlayer(dt);
+    for(const s of aiHunters()){updateBotSeeker(dt,s);trackVel(s,dt);if(st!=='play')return;}
+    for(const b of bots){if(!b.caught)updateBot(b,dt,gameType==='infect'?threatFor(b):seeker,mode==='seek');if(st!=='play')return;}
+    if(gameType==='infect'){infectCheck();if(st!=='play')return;}
+    else if(time<=0){
+      if(gameType==='survive')return end(true,'You survived!','You stayed hidden for the full '+fmt(roundTime)+'.');
+      return end(false,"Time's up",'Nobody managed to tag the seeker.');
+    }
+  }else{
+    updateSeekerPlayer(dt);trackVel(player,dt);
+    for(const s of aiHunters()){updateBotSeeker(dt,s);trackVel(s,dt);if(st!=='play')return;}
+    for(const b of bots){if(!b.caught)updateBot(b,dt,gameType==='infect'?threatFor(b):player,true);if(st!=='play')return;}
+    if(gameType==='infect'){infectCheck();if(st!=='play')return;}
+    const left=bots.length-caught;
+    if(gameType!=='infect'&&time<=0)return end(false,"Time's up",left+' hider'+(left===1?' is':'s are')+' still out there.');
+  }
+  if(toastT>0){toastT-=dt;if(toastT<=0)$('hToast').hidden=true;}
+  $('hTime').textContent=fmt(time);$('hTime').classList.toggle('low',time<20);
+  const pips=[...$('hPips').children];
+  if(mode==='hide'){const v=Math.min(1,player.susp);$('hMeter').style.width=(v*100)+'%';$('hMeter').style.background=v>.6?'var(--danger)':'#e8a33a';
+    $('hSneak').hidden=!isSneaking();
+    const lv=Math.round(noiseLvl/230*5);[...$('hNoise').children].forEach((b,i)=>b.classList.toggle('on',i<lv));
+    $('hPrompt').hidden=!canTag;
+    const alive=1+bots.filter(b=>!b.caught).length;pips.forEach((p,i)=>p.classList.toggle('alive',i<alive));}
+  else pips.forEach((p,i)=>p.classList.toggle('on',i<caught));
+  if(mode==='hide'&&gameType==='infect')$('hPrompt').hidden=true;
+}
+function lightPoly(x,y,aim,half,range,n){const pts=[[x,y]];for(let i=0;i<=n;i++)pts.push(castRay(x,y,aim-half+2*half*i/n,range));return pts;}
+function glowPoly(x,y,range,n){const pts=[];for(let i=0;i<n;i++)pts.push(castRay(x,y,i/n*Math.PI*2,range));return pts;}
+function drawLit(pts,cx,cy,range,base,tint){
+  ctx.save();ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(const p of pts)ctx.lineTo(p[0],p[1]);ctx.closePath();ctx.clip();
+  ctx.drawImage(scene,0,0);
+  const g=ctx.createRadialGradient(cx,cy,0,cx,cy,range);g.addColorStop(0,`rgba(0,0,0,${base})`);g.addColorStop(.6,`rgba(0,0,0,${base+(1-base)*.55})`);g.addColorStop(1,'rgba(0,0,0,1)');
+  ctx.fillStyle=g;ctx.fillRect(cx-range,cy-range,range*2,range*2);
+  if(tint){const t=ctx.createRadialGradient(cx,cy,0,cx,cy,range);t.addColorStop(0,tint);t.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=t;ctx.fillRect(cx-range,cy-range,range*2,range*2);}
+  ctx.restore();
+}
+// seeker seen from above: shoulders, head, two hands on a real flashlight
+function drawSeekerBody(s){
+  ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.aim);
+  ctx.lineCap='round';ctx.lineJoin='round';
+  // arms reaching forward to the flashlight
+  ctx.strokeStyle='#2f281c';ctx.lineWidth=6;
+  ctx.beginPath();ctx.moveTo(0,-13);ctx.lineTo(15,-5);ctx.moveTo(0,13);ctx.lineTo(15,5);ctx.stroke();
+  // shoulders and head
+  ctx.fillStyle='#2a241a';ctx.strokeStyle='#6b5a33';ctx.lineWidth=2;
+  ctx.beginPath();ctx.ellipse(-3,0,10,17,0,0,7);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#4a3b26';ctx.strokeStyle='#8a7440';ctx.beginPath();ctx.arc(-1,0,8.5,0,7);ctx.fill();ctx.stroke();
+  // lens glow
+  const gl=ctx.createRadialGradient(40,0,0,40,0,16);gl.addColorStop(0,'rgba(255,236,170,.75)');gl.addColorStop(1,'rgba(255,236,170,0)');
+  ctx.fillStyle=gl;ctx.beginPath();ctx.arc(40,0,16,0,7);ctx.fill();
+  // tail cap
+  ctx.fillStyle='#1d1d20';ctx.fillRect(11,-3.5,3,7);
+  // barrel with grip rings
+  ctx.fillStyle='#55565c';ctx.fillRect(14,-4,15,8);
+  ctx.strokeStyle='#33343a';ctx.lineWidth=1;
+  for(let x=16;x<28;x+=2.5){ctx.beginPath();ctx.moveTo(x,-4);ctx.lineTo(x,4);ctx.stroke();}
+  ctx.fillStyle='rgba(255,255,255,.18)';ctx.fillRect(14,-4,15,1.5);
+  // flared head
+  ctx.fillStyle='#6a6b72';ctx.beginPath();ctx.moveTo(29,-4);ctx.lineTo(36,-7.5);ctx.lineTo(36,7.5);ctx.lineTo(29,4);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#3b3c42';ctx.lineWidth=1;ctx.stroke();
+  // bezel ring and lens
+  ctx.fillStyle='#9a9ba2';ctx.fillRect(36,-8,2.5,16);
+  ctx.fillStyle='#fff4c8';ctx.beginPath();ctx.ellipse(39,0,1.8,6.5,0,0,7);ctx.fill();
+  // hands gripping the barrel
+  ctx.fillStyle='#b98a5e';ctx.strokeStyle='#7a5636';ctx.lineWidth=1;
+  ctx.beginPath();ctx.arc(17,-4.5,3.6,0,7);ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.arc(23,4.5,3.6,0,7);ctx.fill();ctx.stroke();
+  ctx.restore();
+}
+function drawHider(h,col,alpha,fill){
+  ctx.globalAlpha=alpha==null?1:alpha;
+  ctx.fillStyle=fill||'#1e2c4a';ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,7);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#cfe0ff';ctx.beginPath();ctx.arc(h.x+Math.cos(h.moveDir)*6,h.y+Math.sin(h.moveDir)*6,2.5,0,7);ctx.fill();
+  ctx.globalAlpha=1;
+}
+function drawZones(){
+  const now=performance.now()/1000;
+  for(const z of zones){
+    ctx.save();
+    if(z.used){
+      ctx.strokeStyle=`rgba(120,140,130,${.25+z.pulse*.5})`;ctx.lineWidth=2;ctx.setLineDash([3,7]);
+      ctx.beginPath();ctx.arc(z.x,z.y,z.R,0,7);ctx.stroke();
+    }else{
+      const soon=zoneMoveT<5,blink=soon?(.45+.55*Math.abs(Math.sin(now*6))):1;
+      ctx.globalAlpha=blink*(1-z.appear*.6);
+      if(z.appear>0){ctx.strokeStyle=`rgba(140,250,185,${z.appear})`;ctx.lineWidth=3;ctx.beginPath();ctx.arc(z.x,z.y,z.R+z.appear*50,0,7);ctx.stroke();}
+      const g=ctx.createRadialGradient(z.x,z.y,0,z.x,z.y,z.R*1.6);
+      g.addColorStop(0,'rgba(110,230,160,.14)');g.addColorStop(1,'rgba(110,230,160,0)');
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(z.x,z.y,z.R*1.6,0,7);ctx.fill();
+      ctx.strokeStyle=`rgba(120,235,170,${.45+Math.sin(now*2.5)*.15})`;ctx.lineWidth=2.5;ctx.setLineDash([8,6]);ctx.lineDashOffset=-now*12;
+      ctx.beginPath();ctx.arc(z.x,z.y,z.R,0,7);ctx.stroke();ctx.setLineDash([]);
+      if(z.prog>0){ctx.strokeStyle='rgba(140,250,185,.95)';ctx.lineWidth=5;ctx.beginPath();ctx.arc(z.x,z.y,z.R+6,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.min(1,z.prog/ZONE_T));ctx.stroke();}
+      ctx.font='700 13px "Chakra Petch", monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(150,240,185,.85)';ctx.fillText(z.prog>0?Math.ceil(ZONE_T-z.prog)+'s':'−'+ZONE_CUT+'s',z.x,z.y);
+      ctx.font='600 11px "Chakra Petch", monospace';ctx.fillStyle='rgba(150,240,185,.7)';
+      ctx.fillText(soon?'moving in '+Math.ceil(zoneMoveT)+'s':'moves in '+Math.ceil(zoneMoveT)+'s',z.x,z.y+z.R+16);
+    }
+    ctx.restore();
+  }
+}
+function drawBeacons(){
+  for(const b of beacons){
+    const k=b.t/BEACON_T,fade=1-k;
+    ctx.save();
+    for(let i=0;i<3;i++){const ph=((b.t*.8)+i/3)%1;
+      ctx.strokeStyle=`rgba(255,170,80,${(1-ph)*.7*fade})`;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(b.x,b.y,10+ph*60,0,7);ctx.stroke();}
+    ctx.fillStyle=`rgba(255,180,90,${.9*fade})`;ctx.beginPath();ctx.arc(b.x,b.y,6,0,7);ctx.fill();
+    ctx.font='700 12px "Chakra Petch", monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=`rgba(255,190,110,${.95*fade})`;ctx.fillText('JUST HERE',b.x,b.y-30);
+    ctx.restore();
+  }
+}
+function polyPath(){ctx.beginPath();ctx.moveTo(poly[0][0],poly[0][1]);for(const p of poly)ctx.lineTo(p[0],p[1]);ctx.closePath();}
+function drawSignals(){
+  if(!player)return;
+  for(const g of signals){
+    const k=g.t/g.life,a=Math.sin(Math.PI*k),hw=.42,waves=g.loud?4:3;
+    // sound waves rolling in from the noise's direction
+    ctx.lineCap='round';
+    for(let i=0;i<waves;i++){
+      const ph=(i/waves+g.t*.9)%1,r=80+ph*110;
+      ctx.strokeStyle=`rgba(150,215,205,${a*(1-ph)*.85})`;ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(player.x,player.y,r,g.ang-hw*(.6+ph*.4),g.ang+hw*(.6+ph*.4));ctx.stroke();
+    }
+    // arrow tick showing the direction
+    const r1=46,r2=62,tx=player.x+Math.cos(g.ang)*r2,ty=player.y+Math.sin(g.ang)*r2;
+    ctx.strokeStyle=`rgba(150,215,205,${a*.9})`;ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();
+    ctx.moveTo(player.x+Math.cos(g.ang-.22)*r1,player.y+Math.sin(g.ang-.22)*r1);ctx.lineTo(tx,ty);
+    ctx.lineTo(player.x+Math.cos(g.ang+.22)*r1,player.y+Math.sin(g.ang+.22)*r1);ctx.stroke();
+  }
+}
+function render(){
+  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#000';ctx.fillRect(0,0,VW,VH);
+  ctx.setTransform(view.s,0,0,view.s,view.ox,view.oy);
+  const holder=mode==='seek'?player:seeker;
+  // hider's own glow: a little brighter so you can see where you're running
+  if(mode==='hide'&&player){
+    const gp=glowPoly(player.x,player.y,200,110);drawLit(gp,player.x,player.y,200,.16,'rgba(110,150,240,.14)');
+  }
+  if(mode==='seek'){const gp=glowPoly(player.x,player.y,75,72);drawLit(gp,player.x,player.y,75,.5,'rgba(255,200,110,.06)');}
+  const beams=st==='menu'?[holder]:[holder,...(mode==='seek'&&seeker?[seeker]:[]),...hunters];
+  for(const hd of beams){if(!hd)continue;
+    let ox=hd.x+Math.cos(hd.aim||0)*30,oy=hd.y+Math.sin(hd.aim||0)*30;
+    if(!los(hd.x,hd.y,ox,oy)){ox=hd.x;oy=hd.y;}
+    const bp=lightPoly(ox,oy,hd.aim||0,HALF,RANGE,hd===holder?110:70);drawLit(bp,ox,oy,RANGE,.04,'rgba(255,205,120,.26)');
+  }
+  for(const r of ripples){const k=r.t/r.life,rad=r.max*k;ctx.lineWidth=2;
+    ctx.strokeStyle=r.col==='you'?`rgba(122,166,255,${(1-k)*.45})`:r.col==='zone'?`rgba(140,250,185,${(1-k)*.8})`:`rgba(255,215,130,${(1-k)*.8})`;
+    ctx.beginPath();ctx.arc(r.x,r.y,Math.max(1,rad),0,7);ctx.stroke();}
+  // hider: a faint view of the whole room, drawn over the lights so their edges don't leave black patches
+  if(mode==='hide'&&player){ctx.save();ctx.globalAlpha=.11;ctx.drawImage(scene,0,0);ctx.restore();}
+  drawZones();drawBeacons();
+  for(const m of marks){const a=Math.max(0,1-m.t/3);if(!a)continue;ctx.strokeStyle=`rgba(232,196,106,${a})`;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(m.x-8,m.y-8);ctx.lineTo(m.x+8,m.y+8);ctx.moveTo(m.x+8,m.y-8);ctx.lineTo(m.x-8,m.y+8);ctx.stroke();}
+  if(mode==='seek'){
+    for(const h of bots){if(h.caught||!h.visible)continue;drawHider(h,'#7aa6ff');if(online.on&&h.human)drawName(h,'#cfe0ff');
+      ctx.strokeStyle='#e8c46a';ctx.lineWidth=3;ctx.beginPath();ctx.arc(h.x,h.y,h.r+6,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.min(1,h.lit/CATCH_T));ctx.stroke();}
+    if(gameType==='tag'&&!player.infected){ctx.strokeStyle='rgba(122,166,255,.22)';ctx.lineWidth=2;ctx.setLineDash([6,6]);ctx.beginPath();ctx.arc(player.x,player.y,TAG_R,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
+    drawSignals();
+    if(seeker&&seeker!==player){drawSeekerBody(seeker);if(online.on&&seeker.human)drawName(seeker,'#f0d68a');}
+    for(const h of hunters){drawSeekerBody(h);if(online.on&&h.human)drawName(h,'#f0d68a');}
+    drawSeekerBody(player);
+  }else{
+    if(mode==='hide'&&player){
+      for(const b of bots){if(b.caught)continue;const close=dist(b,player)<150&&los(b.x,b.y,player.x,player.y);if(b.visible||close){drawHider(b,'#5fd38a',.9,'#16351f');if(online.on&&b.human)drawName(b,'#9fe8b8');}}
+      if(gameType==='tag'){ctx.strokeStyle=canTag?'rgba(122,166,255,.95)':'rgba(122,166,255,.35)';ctx.lineWidth=3;ctx.setLineDash([6,6]);
+      ctx.beginPath();ctx.arc(seeker.x,seeker.y,TAG_R,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
+    }
+    for(const h of hunters){drawSeekerBody(h);if(online.on&&h.human)drawName(h,'#f0d68a');}
+    if(seeker){drawSeekerBody(seeker);if(online.on&&seeker.human)drawName(seeker,'#f0d68a');
+      if(seeker.state==='chase'||seeker.alert>0||seeker.state==='investigate'){
+        ctx.font='700 22px "Chakra Petch", monospace';ctx.textAlign='center';ctx.fillStyle=seeker.state==='chase'?'#e8693a':'#e8c46a';
+        ctx.fillText(seeker.state==='chase'?'!':'?',seeker.x,seeker.y-28);}}
+    if(player){const gl=ctx.createRadialGradient(player.x,player.y,0,player.x,player.y,40);gl.addColorStop(0,'rgba(122,166,255,.22)');gl.addColorStop(1,'rgba(122,166,255,0)');
+      ctx.fillStyle=gl;ctx.beginPath();ctx.arc(player.x,player.y,40,0,7);ctx.fill();drawHider(player,'#9cbcff',player.caught?.35:1);}
+  }
+}
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;update(dt);render();requestAnimationFrame(frame);}
+
+// ---------- input ----------
+const GAMEKEYS=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','shift','e'];
+// Space works on every browser/keyboard (checked by physical key, not by its label)
+const keyOf=e=>(e.code==='Space'||e.key===' '||e.key==='Spacebar')?' ':(e.key||'').toLowerCase();
+// sneak: hold Space, or tap it to switch sneaking on/off
+let sneakLatch=false,spaceDownAt=0,spaceUnlatch=false;
+const isSneaking=()=>keys.has(' ')||keys.has('shift')||sneakLatch;
+addEventListener('keydown',e=>{const k=keyOf(e);
+  if(st==='play'){if(GAMEKEYS.includes(k))e.preventDefault();keys.add(k);
+    if(k===' '&&!e.repeat){if(sneakLatch){sneakLatch=false;spaceUnlatch=true;}else{spaceDownAt=performance.now();spaceUnlatch=false;}}
+    if(k==='e'&&online.on&&mode==='hide'&&canTag){if(online.isHost)hostTag(online.me);else sendEv({k:'tagReq'});}
+    else if(k==='e'&&mode==='hide'&&gameType==='tag'&&canTag)sfx.buzzer(),end(true,'Tagged it!','You tagged the seeker with '+fmt(time)+' left.');
+    if(k==='m')setSteer({keys:'forward',forward:'follow',follow:'keys'}[steerMode]);
+    if(k==='n')setSound(!soundOn);
+    if(k==='b')setMusic(!musicOn);
+    if(k==='escape'||k==='p'){if(online.on&&!$('paused').hidden)resume();else pause();}}
+  else if(st==='paused'&&(k==='escape'||k==='p'))resume();});
+addEventListener('keyup',e=>{const k=keyOf(e);keys.delete(k);
+  if(k===' '&&st==='play'&&mode==='hide'){
+    if(spaceUnlatch)spaceUnlatch=false;
+    else if(performance.now()-spaceDownAt<250){sneakLatch=true;toast('Sneaking on · tap Space to stop');}
+  }});
+addEventListener('blur',()=>{keys.clear();if(st==='play'&&!online.on)pause();});
+cv.addEventListener('mousemove',e=>{const b=cv.getBoundingClientRect();mouse={x:(e.clientX-b.left)/b.width*VW,y:(e.clientY-b.top)/b.height*VH};
+  if(steerMode==='follow'&&st==='play'&&player){const g=worldMouse();if(!p0Inside(g))return;player.goal=g;player.goalDirty=true;}});
+const p0Inside=g=>g&&g.x>0&&g.y>0&&g.x<W&&g.y<H;
+function pause(){keys.clear();if(online.on){$('paused').hidden=false;$('quit1').textContent='Leave game';return;}$('quit1').textContent='Main menu';st='paused';$('paused').hidden=false;}
+function resume(){if(online.on){$('paused').hidden=true;cv.focus();return;}st='play';$('paused').hidden=true;cv.focus();last=performance.now();}
+$('pickHide').onclick=()=>startMatch('hide');$('pickSeek').onclick=()=>startMatch('seek');
+$('resume').onclick=resume;
+$('quit1').onclick=()=>{if(online.on)return leaveOnline();toMenu();};
+$('quit2').onclick=()=>{if(online.on||online.inRoom){if(online.isHost)return netSend({t:'toLobby'});return leaveOnline();}toMenu();};
+$('again').onclick=()=>{if(online.on){if(online.isHost)hostStart(match.over);return;}match.over?startMatch(mode):startRound();};
+document.querySelectorAll('.chip[data-steer]').forEach(c=>c.onclick=()=>setSteer(c.dataset.steer));setSteer(steerMode);
+$('soundBtn').onclick=()=>setSound(!soundOn);setSound(soundOn);
+$('musicBtn').onclick=()=>setMusic(!musicOn);setMusic(musicOn);
+function setType(v){
+  const changed=gameType!==v;
+  gameType=v;try{localStorage.setItem('fhs-type',v);}catch(e){}
+  if(changed&&typeof setSize==='function'&&$('sizeIn'))setSize(recSize());
+  document.querySelectorAll('.chip[data-type]').forEach(c=>c.setAttribute('aria-pressed',c.dataset.type===v));
+  if(v==='infect'){
+    $('typeNote').textContent='Anyone who gets caught becomes a seeker with their own flashlight. The winner is the last one still hiding. If time runs out, everyone still hiding wins.';
+    $('hideDesc').textContent='A bot hunts you. Everyone it catches joins the hunt. Be the last one found.';
+    $('seekDesc').textContent='You start with the flashlight. Everyone you catch hunts with you. Catch everyone before time runs out to win.';
+    if(typeof showSettings==='function'&&$('timeIn'))showSettings();return;
+  }
+  const n=$('typeNote');if(n)n.textContent=v==='tag'?'Hiders win by getting inside the circle around the seeker and tagging it. The seeker wins by catching every hider before time runs out.':'Hiders win by staying hidden until time runs out. No tagging. Standing in a green ring for 5 seconds cuts 20 seconds off the clock. Rings move every 30 seconds, and the seeker can see them. The seeker has to find everyone before then.';
+  $('hideDesc').textContent=v==='tag'?'A bot hunts you with a flashlight. Stay out of the beam, keep quiet, and get inside its circle to tag it.':'A bot hunts you with a flashlight. Stay out of the beam and keep quiet until the timer runs out.';
+  $('seekDesc').textContent=v==='tag'?'You hold the flashlight. Catch every hiding bot before one sneaks up behind you.':'You hold the flashlight. Catch every hiding bot before time runs out.';
+  if(typeof showSettings==='function'&&$('timeIn'))showSettings();
+}
+function showSettings(){
+  $('timeIn').value=roundTime;$('timeVal').textContent=fmt(roundTime);
+  $('sizeIn').value=mapSize;$('sizeVal').textContent=SIZE_NAMES[mapSize];
+  $('timeRec').hidden=roundTime!==recTime();$('sizeRec').hidden=mapSize!==recSize();
+  $('recBtn').disabled=roundTime===recTime()&&mapSize===recSize();
+}
+function setTime(v){roundTime=Math.max(30,Math.min(120,Math.round(v/10)*10));showSettings();}
+function setSize(v,redraw){v=Math.max(1,Math.min(6,Math.round(v)));const changed=v!==mapSize;mapSize=v;showSettings();if(changed&&redraw!==false)demo();}
+document.querySelectorAll('.chip[data-type]').forEach(c=>c.onclick=()=>setType(c.dataset.type));setType(gameType);
+document.querySelectorAll('.chip[data-d]').forEach(b=>b.onclick=()=>{diff=b.dataset.d;document.querySelectorAll('.chip[data-d]').forEach(c=>c.setAttribute('aria-pressed',c===b));});
+document.querySelectorAll('.chip[data-n]').forEach(b=>b.onclick=()=>{count=+b.dataset.n;document.querySelectorAll('.chip[data-n]').forEach(c=>c.setAttribute('aria-pressed',c===b));setTime(recTime());setSize(recSize(),false);demo();});
+$('timeIn').oninput=e=>setTime(+e.target.value);
+$('sizeIn').oninput=e=>setSize(+e.target.value);
+$('recBtn').onclick=()=>{setTime(recTime());setSize(recSize());};
+setSize(recSize(),false);setTime(recTime());
+
+// ================= ONLINE MULTIPLAYER =================
+// The server only passes messages around. Each player sends their own position and flashlight;
+// the host's game runs the shared parts: bots, timer, time rings, catches, tags and round results.
+const online={
+  avail:!!window.FHS_SERVER,
+  ws:null,me:null,code:null,host:null,players:[],lobby:{seeker:'bot'},inRoom:false,
+  on:false,isHost:false,ents:{},roster:[],myRole:'hider',
+  score:{seeker:0,hiders:0},history:[],pwins:{},phist:[],round:0,rotation:[],totalRounds:3,ended:false,settings:null,
+  sendT:0,snapT:0,wantStart:false
+};
+const SEND_EVERY=1/15,SNAP_EVERY=1/10;
+let savedName='';try{savedName=localStorage.getItem('fhs-name')||'';}catch(e){}
+
+// ---------- seeded randomness: every player builds the identical map ----------
+function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function withSeed(seed,fn){const r=Math.random;Math.random=mulberry(seed);try{return fn();}finally{Math.random=r;}}
+
+// ---------- connection ----------
+function netSend(o){if(online.ws&&online.ws.readyState===1)online.ws.send(JSON.stringify(o));}
+function connect(then){
+  if(online.ws&&online.ws.readyState===1)return then();
+  lobbyError('');
+  const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
+  online.ws=ws;
+  ws.onopen=()=>then();
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch(_){return;}onNet(m);};
+  ws.onerror=()=>lobbyError('Could not reach the game server. Check your internet and try again.');
+  ws.onclose=()=>{
+    const was=online.inRoom;online.ws=null;online.inRoom=false;online.on=false;
+    if(was){showJoin();lobbyError('You were disconnected from the game.');$('lobby').hidden=false;$('hud').hidden=true;$('over').hidden=true;$('paused').hidden=true;$('menu').hidden=true;st='menu';demo();}
+  };
+}
+function onNet(m){
+  switch(m.t){
+    case 'welcome':online.me=m.id;online.code=m.code;online.inRoom=true;showRoom();break;
+    case 'error':lobbyError(m.msg);break;
+    case 'room':
+      online.players=m.players;online.host=m.host;online.isHost=m.host===online.me;
+      if(m.lobby&&!online.isHost)online.lobby=m.lobby;
+      if(online.isHost&&(!online.lobby||!online.lobby.settings))pushLobby();
+      renderLobby();break;
+    case 'start':onStart(m);break;
+    case 'toLobby':backToLobby(m.reason);break;
+    case 'left':onLeft(m);break;
+    case 'me':onMe(m);break;
+    case 'snap':if(!online.isHost)onSnap(m);break;
+    case 'ev':onEv(m);break;
+  }
+}
+
+// ---------- lobby screens ----------
+function lobbyError(t){const e=$('lobbyErr');e.textContent=t;e.hidden=!t;}
+function showJoin(){$('lobbyJoin').hidden=false;$('lobbyRoom').hidden=true;$('nameIn').value=$('nameIn').value||savedName;}
+function showRoom(){$('lobbyJoin').hidden=true;$('lobbyRoom').hidden=false;$('roomCode').textContent=online.code;renderLobby();}
+function openOnline(){$('menu').hidden=true;$('lobby').hidden=false;if(online.inRoom)showRoom();else showJoin();}
+function myName(){const n=$('nameIn').value.trim().slice(0,16);if(n){savedName=n;try{localStorage.setItem('fhs-name',n);}catch(e){}}return n;}
+function settingsNow(){return{type:gameType,diff,count,mapSize,roundTime};}
+function pushLobby(){if(!online.isHost)return;online.lobby={seeker:online.lobby.seeker||'bot',settings:settingsNow()};netSend({t:'lobby',lobby:online.lobby});}
+const DIFF_NAME={easy:'Easy',normal:'Normal',hard:'Hard'};
+function s0(){return online.isHost?settingsNow():((online.lobby&&online.lobby.settings)||settingsNow());}
+function renderLobby(){
+  if(!online.inRoom)return;
+  $('roomCode').textContent=online.code;$('roomBarCode').textContent=online.code;
+  const L=online.lobby||{},seekerId=online.players.some(p=>p.id===L.seeker)?L.seeker:'bot';
+  const list=$('plist');list.innerHTML='';
+  const row=(name,tags,role,id)=>{
+    const li=document.createElement('li');
+    const nm=document.createElement('span');nm.className='pname';nm.textContent=name;li.appendChild(nm);
+    if(tags){const t=document.createElement('span');t.className='tagx';t.textContent=tags;li.appendChild(t);}
+    const b=document.createElement('button');b.type='button';b.className='role'+(role==='seeker'?' seeker':'');b.textContent=role==='seeker'?'Seeker':'Hider';
+    const turns=(online.isHost?gameType:(L.settings||{}).type)==='infect';
+    if(turns){b.textContent='Takes a turn';b.className='role';b.disabled=true;li.appendChild(b);list.appendChild(li);return;}
+    b.disabled=!online.isHost;if(online.isHost)b.title=role==='seeker'?'Make a hider (a bot will seek)':'Make the seeker';
+    b.onclick=()=>{online.lobby.seeker=role==='seeker'?'bot':id;pushLobby();renderLobby();};
+    li.appendChild(b);list.appendChild(li);
+  };
+  for(const p of online.players){const tags=[p.id===online.host?'Host':'',p.id===online.me?'You':''].filter(Boolean).join(' · ');row(p.name,tags,p.id===seekerId?'seeker':'hider',p.id);}
+  const turnsMode=s0().type==='infect';
+  if(seekerId==='bot'&&!turnsMode){const li=document.createElement('li');li.innerHTML='<span class="pname">Bot seeker</span><span class="tagx">Bot</span>';const b=document.createElement('button');b.className='role seeker';b.disabled=true;b.textContent='Seeker';li.appendChild(b);list.appendChild(li);}
+  const s=s0();
+  const humans=online.players.length-(seekerId==='bot'||turnsMode?0:1),total=Math.max(s.count,humans-(turnsMode?1:0)),botsN=Math.max(0,total-(humans-(turnsMode?1:0)));
+  $('lobbySummary').textContent=(s.type==='survive'?'Survive the timer':s.type==='infect'?'Infection':'Tag the seeker')+' · '+DIFF_NAME[s.diff]+' · '+total+' hider'+(total===1?'':'s')+(botsN?' ('+botsN+' bot'+(botsN===1?'':'s')+')':'')+' · '+SIZE_NAMES[s.mapSize]+' map · '+fmt(s.roundTime)+(turnsMode?' · '+online.players.length+' round'+(online.players.length===1?'':'s')+', everyone seeks once':'');
+  $('roleNote').textContent=turnsMode?'Infection: each round a different person starts as the seeker, until everyone has had a turn. The most round wins takes the match.':online.isHost?'You are the host. Tap a player\'s role to make them the seeker. With no human seeker, a bot seeks.':'The host picks who seeks.';
+  $('hostRow').hidden=!online.isHost;$('waitNote').hidden=online.isHost;
+}
+function onLeft(m){
+  if(!online.on)return;
+  const e=online.ents[m.id];if(!e)return;
+  if(online.isHost&&e.role==='seeker'){netSend({t:'toLobby'});return;}
+  delete online.ents[m.id];bots=bots.filter(b=>b!==e);
+  toast((m.name||'A player')+' left the game');
+}
+function backToLobby(reason){
+  online.on=false;st='menu';$('hud').hidden=true;$('over').hidden=true;$('paused').hidden=true;$('menu').hidden=true;
+  $('lobby').hidden=false;showRoom();demo();
+  const msg=$('lobbyMsg');msg.textContent=reason||'';msg.hidden=!reason;
+}
+function leaveOnline(){try{online.ws&&online.ws.close();}catch(e){}online.ws=null;online.inRoom=false;online.on=false;$('lobby').hidden=true;$('roomBar').hidden=true;$('modes').hidden=false;toMenu();}
+
+// ---------- starting a round (host sends, everyone builds the same round) ----------
+function hostStart(fresh){
+  if(!online.isHost)return;
+  if(fresh){online.score={seeker:0,hiders:0};online.history=[];online.pwins={};online.phist=[];online.round=0;online.rotation=online.players.map(p=>p.id);}
+  const s=settingsNow(),L=online.lobby;
+  let seekerId=online.players.some(p=>p.id===L.seeker)?L.seeker:'bot';
+  let total=3;
+  if(s.type==='infect'){
+    // one round per person; the starting seeker takes turns in join order (skipping anyone who left)
+    online.rotation=online.rotation.filter(id=>online.players.some(p=>p.id===id));
+    for(const p of online.players)if(!online.rotation.includes(p.id))online.rotation.push(p.id);
+    total=Math.max(1,online.rotation.length);
+    seekerId=online.rotation[online.round%total];
+  }
+  const roster=[];
+  if(seekerId==='bot')roster.push({id:'bs',name:'Bot seeker',role:'seeker',bot:true});
+  else{const p=online.players.find(p=>p.id===seekerId);roster.push({id:p.id,name:p.name,role:'seeker'});}
+  const hum=online.players.filter(p=>p.id!==seekerId);
+  for(const p of hum)roster.push({id:p.id,name:p.name,role:'hider'});
+  const nh=Math.max(s.count,hum.length);
+  for(let i=1;i<=nh-hum.length;i++)roster.push({id:'b'+i,name:'Bot '+i,role:'hider',bot:true});
+  netSend({t:'start',seed:(Math.random()*2**31)|0,round:online.round+1,score:online.score,history:online.history,pwins:online.pwins,phist:online.phist,total,settings:s,roster});
+}
+function onStart(m){
+  const s=m.settings;
+  gameType=s.type;diff=s.diff;mapSize=s.mapSize;roundTime=s.roundTime;
+  online.roster=m.roster;online.round=m.round;online.score=m.score;online.history=m.history||[];online.pwins=m.pwins||{};online.phist=m.phist||[];online.totalRounds=m.total||3;online.settings=s;online.ended=false;hunters=[];
+  const mine=m.roster.find(r=>r.id===online.me);if(!mine)return;
+  online.myRole=mine.role;online.on=true;
+  mode=mine.role==='seeker'?'seek':'hide';
+  const side=online.myRole==='seeker'?'seeker':'hiders';
+  if(gameType==='infect'){const me=online.me,others=Object.keys(online.pwins).filter(k=>k!==me).map(k=>online.pwins[k]);
+    match={round:m.round-1,wins:online.pwins[me]||0,losses:Math.max(0,...others),history:online.phist.map(ws=>ws.includes(me)),over:false};}
+  else match={round:m.round-1,wins:online.score[side],losses:online.score[side==='seeker'?'hiders':'seeker'],history:online.history.map(w=>w===side),over:false};
+  match.round++;
+  ripples=[];marks=[];signals=[];caught=0;canTag=false;noiseLvl=0;keys.clear();mouse=null;sneakLatch=false;online.ents={};beacons=[];startedAs=mode;
+  const cfg=DIFF[diff];
+  withSeed(m.seed,()=>{
+    loadMap(mapSize);
+    const sk=pick(floorTiles),spots=[sk];
+    bots=[];seeker=null;player=null;
+    for(const r of m.roster){
+      const at=r.role==='seeker'?sk:farTile(sk,spots);if(r.role!=='seeker')spots.push(at);
+      let e;
+      if(r.id===online.me){
+        e=r.role==='seeker'?{x:at.x,y:at.y,r:14,aim:0,moveDir:0}:{x:at.x,y:at.y,r:12,moveDir:0,noise:0,stepT:0,susp:0};
+      }else if(r.bot&&online.isHost){
+        e=r.role==='seeker'?newSeeker(at):newBot(at);e.ai=true;if(r.role==='seeker')e.nextSpin=rand(...cfg.spin);
+      }else{
+        e={x:at.x,y:at.y,tx:at.x,ty:at.y,r:r.role==='seeker'?14:12,aim:0,aimT:0,moveDir:0,noise:0,puppet:true,state:'patrol',alert:0,lit:0,susp:0};
+      }
+      e.id=r.id;e.name=r.name;e.role=r.role;e.human=!r.bot;e.caught=false;
+      online.ents[r.id]=e;
+      if(r.id===online.me)player=e;
+      else if(r.role==='seeker')seeker=e;
+      else bots.push(e);
+    }
+    if(mode==='seek')seeker=null;
+    if(seeker&&player&&mode==='hide')seeker.aim=angTo(seeker,player)+Math.PI;
+    makeZones();
+  });
+  time=roundTime;count=m.roster.filter(r=>r.role==='hider').length;
+  fitView();st='play';
+  $('menu').hidden=true;$('lobby').hidden=true;$('over').hidden=true;$('paused').hidden=true;$('hud').hidden=false;
+  const hide=mode==='hide',sk=m.roster.find(r=>r.role==='seeker');
+  $('hMode').textContent='Online '+online.code+' · Round '+match.round+' of '+online.totalRounds+' · '+(gameType==='infect'?'your wins '+match.wins:match.wins+'–'+match.losses)+' · '+(hide?'Hiding':'Seeking');
+  $('hObj').textContent=gameType==='infect'?(hide?'Don\'t get caught. Be the last one found':'Catch them. Only the last one hiding wins'):hide?(gameType==='survive'?'Stay hidden until the timer runs out':'Get inside the seeker\'s circle and tag it'):'Find all '+count+' hider'+(count===1?'':'s');
+  $('hMeterLbl').hidden=!hide;$('hMeterWrap').hidden=!hide;$('hNoiseBox').hidden=!hide;
+  const showPips=!hide||count>1;$('hPips').hidden=!showPips;$('hPipsLbl').hidden=!showPips;
+  $('hPipsLbl').textContent=hide?'Team still hiding':'Caught';
+  $('hPips').innerHTML=hide?'<span></span>'+'<span class="mate"></span>'.repeat(count-1):'<span></span>'.repeat(count);
+  setKeys();
+  toast((hide?(sk.bot?'A bot is seeking':sk.name+' is seeking'):'You are the seeker')+' · Round '+match.round);audio();sfx.click();
+  cv.focus();
+}
+
+// ---------- live updates ----------
+function onMe(m){
+  const e=online.ents[m.from];if(!e||!e.puppet||!online.on)return;
+  if(Math.hypot(m.x-e.x,m.y-e.y)>160){e.x=m.x;e.y=m.y;}
+  e.tx=m.x;e.ty=m.y;e.aimT=m.a;e.moveDir=m.d;e.noise=m.n||0;e.moving=!!m.m;
+}
+function sendMe(dt){
+  online.sendT-=dt;if(online.sendT>0)return;online.sendT=SEND_EVERY;
+  const p=player;netSend({t:'me',x:Math.round(p.x),y:Math.round(p.y),a:+(p.aim||0).toFixed(2),d:+(p.moveDir||0).toFixed(2),n:p.noise||0,m:(p.noise||0)>0?1:0});
+}
+function sendSnap(dt){
+  online.snapT-=dt;if(online.snapT>0)return;online.snapT=SNAP_EVERY;
+  const b={};
+  for(const id in online.ents){const e=online.ents[id];if(!e.ai)continue;
+    b[id]=[Math.round(e.x),Math.round(e.y),+(e.aim||0).toFixed(2),+(e.moveDir||0).toFixed(2),e.noise||0,e.state||'',+(e.alert||0).toFixed(1)];}
+  const susp={};for(const id in online.ents){const e=online.ents[id];if(e.puppet&&e.role==='hider')susp[id]=+(e.susp||0).toFixed(2);}
+  netSend({t:'snap',time:+time.toFixed(2),b,susp,z:zones.map(z=>[Math.round(z.x),Math.round(z.y),+z.prog.toFixed(2),z.used?1:0]),zmt:+zoneMoveT.toFixed(1)});
+}
+function onSnap(m){
+  if(!online.on)return;
+  if(Math.abs(m.time-time)>.4)time=m.time;
+  for(const id in m.b){const e=online.ents[id];if(!e||!e.puppet)continue;const v=m.b[id];
+    if(Math.hypot(v[0]-e.x,v[1]-e.y)>160){e.x=v[0];e.y=v[1];}
+    e.tx=v[0];e.ty=v[1];e.aimT=v[2];e.moveDir=v[3];e.noise=v[4];e.state=v[5];e.alert=v[6];}
+  if(player&&m.susp&&m.susp[online.me]!=null)player.susp=m.susp[online.me];
+  if(m.z)m.z.forEach((v,i)=>{const z=zones[i];if(!z)return;if(z.x!==v[0]||z.y!==v[1]){z.x=v[0];z.y=v[1];z.appear=1;}z.prog=v[2];if(v[3]&&!z.used){z.used=true;z.pulse=1.2;}});
+  if(m.zmt!=null)zoneMoveT=m.zmt;
+}
+function movePuppets(dt){
+  const k=Math.min(1,dt*14);
+  for(const id in online.ents){const e=online.ents[id];if(!e.puppet)continue;
+    e.x+=(e.tx-e.x)*k;e.y+=(e.ty-e.y)*k;e.aim=rotTo(e.aim||0,e.aimT||0,12*dt);
+    e.alert=Math.max(0,(e.alert||0)-dt);}
+}
+
+// ---------- events: catches, tags, rings, round end ----------
+function sendEv(o){netSend({t:'ev',...o});}
+function onEv(m){
+  if(!online.on)return;
+  switch(m.k){
+    case 'caught':applyCaught(m.id);break;
+    case 'infect':applyInfect(m.id);break;
+    case 'end':applyEnd(m);break;
+    case 'tagReq':if(online.isHost)hostTag(m.from);break;
+    case 'zoneDone':applyZoneDone(m.x,m.y);break;
+    case 'zoneWarn':if(mode==='seek'){toast('A hider is standing in a time ring!');sfx.zoneWarn(panFor(m.x));}break;
+    case 'zoneMoved':sfx.zoneMove();toast('The time ring moved');break;
+  }
+}
+function netCaught(e){
+  if(!online.isHost||e.caught||e.infected)return;
+  if(gameType==='infect'){applyInfect(e.id);sendEv({k:'infect',id:e.id});return;}
+  applyCaught(e.id);sendEv({k:'caught',id:e.id});
+}
+// infection: a caught hider becomes a seeker (you get a flashlight; on the host a bot becomes a bot seeker)
+function applyInfect(id){
+  let e=online.ents[id];if(!e||e.infected)return;
+  e.infected=true;e.role='seeker';e.lit=0;e.susp=0;caught++;
+  marks.push({x:e.x,y:e.y,t:0});ripple(e.x,e.y,90,'beam',.7);sfx.pop(panFor(e.x));
+  if(id===online.me){
+    player.infected=true;player.r=14;player.aim=player.moveDir||0;player.inLight=false;player.noise=0;noiseLvl=0;mode='seek';
+    toast('You were caught! You\'re a seeker now. Find the rest');
+    $('hObj').textContent='You\'re a seeker now. Help catch the last hiders';
+    $('hMode').textContent=$('hMode').textContent.replace('Hiding','Seeking');
+    $('hMeterLbl').hidden=true;$('hMeterWrap').hidden=true;$('hNoiseBox').hidden=true;$('hPrompt').hidden=true;
+    $('hPipsLbl').textContent='Caught';$('hPips').hidden=false;$('hPipsLbl').hidden=false;$('hPips').innerHTML='<span></span>'.repeat(count);
+    setKeys();return;
+  }
+  bots=bots.filter(b=>b!==e);
+  if(e.ai){const h=newSeeker(e);Object.assign(h,{id:e.id,name:e.name,role:'seeker',human:false,ai:true,infected:true,caught:false,state:'look',timer:.8,lookDir:1,aim:e.moveDir||0});online.ents[id]=h;e=h;}
+  else{e.r=14;e.state='patrol';}
+  hunters.push(e);
+  toast((e.human?e.name:'A bot')+' was caught and is seeking now');
+}
+function applyCaught(id){
+  const e=online.ents[id];if(!e||e.caught)return;
+  e.caught=true;e.lit=0;marks.push({x:e.x,y:e.y,t:0});ripple(e.x,e.y,90,'beam',.7);sfx.pop(panFor(e.x));
+  if(mode==='seek')caught++;
+  if(id===online.me){toast('You were caught! Watching the rest of the round');$('hObj').textContent='You were caught. Watching the rest of the round';}
+  else toast((e.human?e.name:(mode==='hide'?'A teammate bot':'A bot'))+' was caught');
+}
+function seekerEnt(){return mode==='seek'?player:seeker;}
+function hiderEnts(){return(mode==='hide'?[player,...bots]:bots).filter(e=>e&&!e.infected);}
+function hostTag(id){
+  if(gameType!=='tag'||online.ended)return;
+  const e=online.ents[id],S=seekerEnt();
+  if(e&&!e.caught&&S&&dist(e,S)<TAG_R+40)netEnd('hiders','Tagged!',(e.human?e.name:'A bot')+' tagged the seeker.');
+}
+function netEndInfect(winIds,title,text){
+  if(!online.isHost||online.ended)return;
+  for(const id of winIds)online.pwins[id]=(online.pwins[id]||0)+1;online.phist.push(winIds);
+  const m={k:'end',infect:1,winners:winIds,title,text,pwins:online.pwins,phist:online.phist};
+  sendEv(m);applyEnd(m);
+}
+function netEnd(winner,title,text){
+  if(!online.isHost||online.ended)return;
+  online.score[winner]++;online.history.push(winner);
+  const m={k:'end',winner,title,text,score:online.score,history:online.history,buzz:title==='Tagged!'?1:0};
+  sendEv(m);applyEnd(m);
+}
+function applyEnd(m){
+  if(online.ended&&!online.isHost)return;online.ended=true;
+  if(m.buzz)sfx.buzzer();
+  online.score=m.score;online.history=m.history;
+  st='over';$('hPrompt').hidden=true;
+  if(m.infect){
+    online.pwins=m.pwins;online.phist=m.phist;
+    const me=online.me,win=m.winners.includes(me),others=Object.keys(m.pwins).filter(k=>k!==me).map(k=>m.pwins[k]);
+    match.wins=m.pwins[me]||0;match.losses=Math.max(0,...others);match.history=m.phist.map(ws=>ws.includes(me));
+    const done=match.round>=online.totalRounds;match.over=done;
+    const nameOf=id=>(online.ents[id]&&online.ents[id].name)||(online.roster.find(r=>r.id===id)||{}).name||'Someone';
+    const ids=[...new Set([...online.roster.filter(r=>!r.bot).map(r=>r.id),...Object.keys(m.pwins)])];
+    const standings=ids.map(id=>[id,m.pwins[id]||0]).sort((a,b)=>b[1]-a[1]);
+    const score=' Standings: '+standings.map(([id,w])=>nameOf(id)+' '+w).join(' · ')+'.';
+    if(done){const top=standings.length?standings[0][1]:0,leaders=standings.filter(x=>x[1]===top).map(x=>x[0]);
+      const won=leaders.length===1&&leaders[0]===me,tie=leaders.length>1;
+      $('oTitle').textContent=won?'You won the match!':tie?(leaders.includes(me)?'You tied for the win!':'It\'s a tie'):nameOf(leaders[0])+' won the match';
+      $('oTitle').style.color=won||(tie&&leaders.includes(me))?'var(--win)':'var(--danger)';$('again').classList.toggle('winbtn',won||(tie&&leaders.includes(me)));}
+    else{$('oTitle').textContent='Round '+match.round+': '+(win?'You won!':'You lost');$('oTitle').style.color=win?'var(--win)':'var(--danger)';$('again').classList.toggle('winbtn',win);}
+    $('oText').textContent=m.title+' '+m.text+score;
+    $('oRounds').innerHTML=[...Array(online.totalRounds).keys()].map(i=>{const r=match.history[i];return '<span class="'+(r===true?'w':r===false?'l':'')+'">'+(r===true?'Won':r===false?'Lost':'Round '+(i+1))+'</span>';}).join('');
+    if(online.isHost){$('again').disabled=false;$('again').textContent=done?'Play again':'Next round';$('quit2').textContent='Back to lobby';}
+    else{$('again').disabled=true;$('again').textContent='Waiting for the host…';$('quit2').textContent='Leave game';}
+    $('over').hidden=false;return;
+  }
+  const side=online.myRole==='seeker'?'seeker':'hiders',other=side==='seeker'?'hiders':'seeker',win=m.winner===side;
+  match.wins=m.score[side];match.losses=m.score[other];match.history=m.history.map(w=>w===side);
+  const done=match.wins>=2||match.losses>=2;match.over=done;
+  const who=m.winner==='seeker'?'The seeker wins the round.':'The hiders win the round.';
+  const score=' Match score: '+match.wins+'–'+match.losses+'.';
+  if(done){const won=match.wins>=2;$('oTitle').textContent=won?'You won the match!':'You lost the match';$('oTitle').style.color=won?'var(--win)':'var(--danger)';$('again').classList.toggle('winbtn',won);$('oText').textContent='Round '+match.round+': '+m.title+' '+m.text+' '+who+score;}
+  else{$('oTitle').textContent='Round '+match.round+': '+(win?'Your side won':'Your side lost');$('oTitle').style.color=win?'var(--win)':'var(--danger)';$('again').classList.toggle('winbtn',win);$('oText').textContent=m.title+' '+m.text+' '+who+score;}
+  $('oRounds').innerHTML=[0,1,2].map(i=>{const r=match.history[i];return '<span class="'+(r===true?'w':r===false?'l':'')+'">'+(r===true?'Won':r===false?'Lost':'Round '+(i+1))+'</span>';}).join('');
+  if(online.isHost){$('again').disabled=false;$('again').textContent=done?'Play again':'Next round';$('quit2').textContent='Back to lobby';}
+  else{$('again').disabled=true;$('again').textContent='Waiting for the host…';$('quit2').textContent='Leave game';}
+  $('over').hidden=false;
+}
+function applyZoneDone(x,y){
+  beacons.push({x,y,t:0});sfx.zone(panFor(x));ripple(x,y,140,'zone',1);
+  toast(mode==='hide'?'−'+ZONE_CUT+' seconds! The seeker knows someone was here':'A hider cut '+ZONE_CUT+' seconds off the clock! Check the marker');
+}
+
+// host: catches when the seeker is a person (a bot seeker does its own catching)
+function hostCatchCheck(dt){for(const S of allHunters())if(!S.ai)hostCatchBy(dt,S);}
+function hostCatchBy(dt,S){
+  const L={x:S.x,y:S.y,aim:S.aim||0,half:HALF,range:RANGE};
+  for(const h of hiderEnts()){
+    if(h.caught)continue;
+    const d=dist(h,S),beam=inBeam(L,h.x,h.y),lit=beam||(d<70&&los(S.x,S.y,h.x,h.y));
+    if(lit){h.lit=(h.lit||0)+dt;if(d<CLOSE_R&&beam)h.lit=CATCH_T;if(h.lit>=CATCH_T){netCaught(h);continue;}}
+    else h.lit=Math.max(0,(h.lit||0)-dt*.6);
+  }
+}
+function hostCheckEnd(){
+  if(online.ended)return;
+  if(gameType==='infect'){
+    const left=hiderEnts().filter(h=>!h.caught),total=online.roster.filter(r=>r.role==='hider').length;
+    const names=a=>{const n=a.map(h=>h.name);return n.length<2?n.join(''):n.slice(0,-1).join(', ')+' and '+n[n.length-1];};
+    if(total>1&&left.length<=1){
+      if(left.length)return netEndInfect([left[0].id],left[0].name+' is the last one standing!','Everyone else was caught.');
+      return netEndInfect(online.roster.filter(r=>r.role==='seeker').map(r=>r.id),'Everyone was caught!','The seeker wins this round.');
+    }
+    if(total<=1&&!left.length)return netEndInfect(online.roster.filter(r=>r.role==='seeker').map(r=>r.id),'Caught!','The seeker found the only hider.');
+    if(time<=0)return netEndInfect(left.map(h=>h.id),'Time\'s up!',left.length?names(left)+' stayed hidden until the end.':'Nobody was left hiding.');
+    return;
+  }
+  const hs=hiderEnts();
+  if(hs.length&&hs.every(h=>h.caught))return netEnd('seeker','Everyone was found!','The seeker caught every hider.');
+  if(time<=0){
+    if(gameType==='survive')return netEnd('hiders','Time\'s up!','The hiders stayed hidden until the end.');
+    return netEnd('seeker','Time\'s up!','Nobody tagged the seeker in time.');
+  }
+}
+// what the seeker sees: hiders show up only in the light (and nearby), plus vague noise arrows
+function seekerView(dt){
+  const S=player,L={x:S.x,y:S.y,aim:S.aim,half:HALF,range:RANGE};
+  for(const h of bots){
+    if(h.caught)continue;
+    const d=dist(h,S),beam=inBeam(L,h.x,h.y),lit=beam||(d<70&&los(S.x,S.y,h.x,h.y));
+    if(lit&&!h.visible){h.alertCd=Math.max(0,(h.alertCd||0));if(h.alertCd<=0){sfx.spotted(panFor(h.x));h.alertCd=1.2;}}
+    h.alertCd=Math.max(0,(h.alertCd||0)-dt);h.visible=lit;
+    if(!online.isHost)h.lit=lit?Math.min(CATCH_T,(h.lit||0)+dt):Math.max(0,(h.lit||0)-dt*.6);
+    // noise: running is easy to hear; quiet steps only sometimes, and only up close
+    const moving=(h.noise||0)>0;h.sigT=(h.sigT||0)-dt;
+    if(moving&&h.sigT<=0){
+      if(h.noise>=150){signal(h.x,h.y,true);h.sigT=1.2;}
+      else if(d<230&&Math.random()<.35){signal(h.x,h.y);h.sigT=2.6;}
+      else h.sigT=1.3;
+    }
+  }
+}
+function onlineHud(dt){
+  if(toastT>0){toastT-=dt;if(toastT<=0)$('hToast').hidden=true;}
+  $('hTime').textContent=fmt(time);$('hTime').classList.toggle('low',time<20);
+  const pips=[...$('hPips').children];
+  if(mode==='hide'){const v=Math.min(1,player.susp||0);$('hMeter').style.width=(v*100)+'%';$('hMeter').style.background=v>.6?'var(--danger)':'#e8a33a';
+    $('hSneak').hidden=!isSneaking()||player.caught;
+    const lv=Math.round(noiseLvl/230*5);[...$('hNoise').children].forEach((b,i)=>b.classList.toggle('on',i<lv));
+    $('hPrompt').hidden=!canTag;
+    const alive=[player,...bots].map(e=>!e.caught);pips.forEach((p,i)=>p.classList.toggle('alive',!!alive[i]));}
+  else pips.forEach((p,i)=>p.classList.toggle('on',i<caught));
+}
+function onlineUpdate(dt){
+  time-=dt;soundTick(dt);
+  if(online.isHost)updateZones(dt);
+  else for(const z of zones){z.appear=Math.max(0,z.appear-dt*1.5);z.pulse=Math.max(0,z.pulse-dt);}
+  beacons=beacons.filter(b=>(b.t+=dt)<BEACON_T);
+  if(!player.caught){if(mode==='hide')updateHiderPlayer(dt);else{updateSeekerPlayer(dt);trackVel(player,dt);}}
+  else{player.noise=0;noiseLvl=0;}
+  movePuppets(dt);
+  for(const s of allHunters())if(s!==player&&!s.ai)trackVel(s,dt);
+  const S=seekerEnt();
+  if(online.isHost){
+    for(const s of aiHunters()){updateBotSeeker(dt,s);trackVel(s,dt);if(st!=='play')return;}
+    for(const b of bots)if(b.ai&&!b.caught){updateBot(b,dt,gameType==='infect'?threatFor(b):S,false);if(st!=='play')return;}
+    hostCatchCheck(dt);
+    if(st!=='play')return;
+    hostCheckEnd();
+    if(st!=='play')return;
+    sendSnap(dt);
+  }
+  if(mode==='seek')seekerView(dt);
+  if(mode==='hide'&&S){
+    canTag=gameType==='tag'&&!player.caught&&dist(S,player)<TAG_R;
+    // standing in any person's light (bot seekers set this themselves on the host)
+    const lit=!player.caught&&allHunters().some(h=>!h.ai&&inBeam({x:h.x,y:h.y,aim:h.aim||0,half:HALF,range:RANGE},player.x,player.y));
+    player.inLight=(online.isHost&&aiHunters().length?player.inLight:false)||lit;
+  }
+  sendMe(dt);
+  onlineHud(dt);
+}
+// a person's name over their dot (only for people you can see)
+function drawName(e,col){ctx.font='600 12px "Chakra Petch", monospace';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillStyle=col;ctx.fillText(e.name,e.x,e.y-(e.r||12)-8);}
+
+// ---------- buttons ----------
+if(online.avail)$('onlineRow').hidden=false;
+$('onlineBtn').onclick=()=>{claimAudio();openOnline();};
+$('lobbyBack').onclick=()=>{$('lobby').hidden=true;$('menu').hidden=false;};
+$('createBtn').onclick=()=>{const n=myName();if(!n){lobbyError('Type your name first.');$('nameIn').focus();return;}connect(()=>netSend({t:'create',name:n}));};
+$('joinBtn').onclick=()=>{const n=myName(),c=$('codeIn').value.trim().toUpperCase();
+  if(!n){lobbyError('Type your name first.');$('nameIn').focus();return;}
+  if(c.length!==4){lobbyError('Game codes have 4 letters or numbers.');$('codeIn').focus();return;}
+  connect(()=>netSend({t:'join',code:c,name:n}));};
+$('codeIn').addEventListener('keydown',e=>{if(e.key==='Enter')$('joinBtn').click();});
+$('leaveBtn').onclick=leaveOnline;
+$('startBtn').onclick=()=>{pushLobby();hostStart(true);};
+$('settingsBtn').onclick=()=>{$('lobby').hidden=true;$('menu').hidden=false;$('roomBar').hidden=false;$('modes').hidden=true;$('onlineRow').hidden=true;};
+$('backLobby').onclick=()=>{$('menu').hidden=true;$('roomBar').hidden=true;$('modes').hidden=false;$('onlineRow').hidden=!online.avail;$('lobby').hidden=false;pushLobby();renderLobby();};
+
+demo();requestAnimationFrame(frame);
+})();
+
+</script>
+
+</body>
+</html>

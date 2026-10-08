@@ -1,0 +1,13 @@
+{
+  "name": "flashlight-hide-and-seek",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Online hide-and-seek in the dark. One small Node server, no dependencies.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
