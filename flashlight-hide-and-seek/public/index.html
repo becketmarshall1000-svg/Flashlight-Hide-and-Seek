@@ -803,7 +803,9 @@ function soundTick(dt){
   let prox=0;
   for(const h of hunters){if(h!==player)strides(h,dt,40,()=>footstep(.5*hear(dist(h,player)),panFor(h.x),true));}
   if(mode==='seek'&&seeker&&seeker!==player)strides(seeker,dt,40,()=>footstep(.5*hear(dist(seeker,player)),panFor(seeker.x),true));
-  if(mode==='hide'&&seeker){
+  // once you're caught and watching, no more danger sounds for you
+  if(player.caught){player.inLight=false;alarmT=0;}
+  if(mode==='hide'&&seeker&&!player.caught){
     const d=Math.min(dist(seeker,player),...hunters.map(h=>dist(h,player)));
     strides(seeker,dt,40,()=>footstep(.55*hear(dist(seeker,player)),panFor(seeker.x),true));
     // danger: a seeker is close or starting to spot you
@@ -1679,7 +1681,7 @@ function onlineUpdate(dt){
     canTag=gameType==='tag'&&!player.caught&&dist(S,player)<TAG_R;
     // standing in any person's light (bot seekers set this themselves on the host)
     const lit=!player.caught&&allHunters().some(h=>!h.ai&&inBeam({x:h.x,y:h.y,aim:h.aim||0,half:HALF,range:RANGE},player.x,player.y));
-    player.inLight=(online.isHost&&aiHunters().length?player.inLight:false)||lit;
+    player.inLight=!player.caught&&((online.isHost&&aiHunters().length?player.inLight:false)||lit);
   }
   sendMe(dt);
   onlineHud(dt);
@@ -1704,7 +1706,6 @@ $('backLobby').onclick=()=>{$('menu').hidden=true;$('roomBar').hidden=true;$('mo
 
 demo();requestAnimationFrame(frame);
 })();
-
 </script>
 
 </body>
